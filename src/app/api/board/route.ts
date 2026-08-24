@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBoard, saveBoard, type BoardData } from "@/lib/store";
-import { sanitizeDescription } from "@/lib/sanitize";
+import { sanitizeDescription, sanitizeColor } from "@/lib/sanitize";
 
 export async function GET() {
   const data = await getBoard();
@@ -18,6 +18,7 @@ function sanitizeBoard(data: BoardData): void {
         if (card.description) {
           card.description = sanitizeDescription(card.description);
         }
+        card.titleColor = sanitizeColor(card.titleColor);
       }
     }
   }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { BoardData, Card, Column } from "@/lib/store";
 import RichTextEditor from "@/components/RichTextEditor";
+import { PRESET_COLORS } from "@/lib/colors";
 
 const TAG_LABELS: Record<Card["tag"], string> = {
   front: "front",
@@ -387,7 +388,9 @@ export default function Home() {
                   onClick={() => openCard(col.id, card)}
                 >
                   <span className={`tag t-${card.tag}`}>{TAG_LABELS[card.tag]}</span>
-                  <span className="title">{card.title}</span>
+                  <span className="title" style={card.titleColor ? { color: card.titleColor } : undefined}>
+                    {card.title}
+                  </span>
                   <span className="foot-row">
                     <span className="meta">{card.meta || ""}</span>
                     <span className="foot-icons">
@@ -462,17 +465,48 @@ export default function Home() {
         {selectedCard && (
           <>
             <div className="cd-head">
-              <textarea
-                className="cd-title"
-                rows={2}
-                value={selectedCard.title}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  updateSelectedCard((c) => {
-                    c.title = value;
-                  });
-                }}
-              />
+              <div className="cd-title-wrap">
+                <input
+                  type="text"
+                  className="cd-title"
+                  value={selectedCard.title}
+                  style={selectedCard.titleColor ? { color: selectedCard.titleColor } : undefined}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    updateSelectedCard((c) => {
+                      c.title = value;
+                    });
+                  }}
+                />
+                <div className="title-colors">
+                  {PRESET_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={"title-swatch" + (selectedCard.titleColor === c ? " active" : "")}
+                      style={{ background: c }}
+                      aria-label={`Couleur du titre ${c}`}
+                      onClick={() =>
+                        updateSelectedCard((card) => {
+                          card.titleColor = c;
+                        })
+                      }
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    className="title-swatch-clear"
+                    title="Retirer la couleur"
+                    onClick={() =>
+                      updateSelectedCard((card) => {
+                        card.titleColor = undefined;
+                      })
+                    }
+                  >
+                    &times;
+                  </button>
+                </div>
+              </div>
               <button type="button" className="cd-close" aria-label="Fermer" onClick={closeCard}>
                 &times;
               </button>

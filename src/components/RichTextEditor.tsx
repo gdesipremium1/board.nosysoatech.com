@@ -5,8 +5,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { Placeholder } from "@tiptap/extension-placeholder";
-
-const COLORS = ["#1b221c", "#24468f", "#a1650f", "#2f6f4e", "#a12f2f"];
+import { PRESET_COLORS } from "@/lib/colors";
 
 type Props = {
   value: string;
@@ -52,7 +51,7 @@ export default function RichTextEditor({ value, onSave }: Props) {
           Titre
         </button>
         <span className="rte-sep" />
-        {COLORS.map((c) => (
+        {PRESET_COLORS.map((c) => (
           <button
             key={c}
             type="button"

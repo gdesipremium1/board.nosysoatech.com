@@ -14,6 +14,7 @@ export type Attachment = {
 export type Card = {
   id: string;
   title: string;
+  titleColor?: string;
   tag: "front" | "backend" | "bug" | "content" | "other";
   meta?: string;
   description?: string;
