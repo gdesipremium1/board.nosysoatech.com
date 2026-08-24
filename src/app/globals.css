@@ -141,6 +141,66 @@ header {
   color: var(--blue);
   border-color: var(--blue);
 }
+.tab-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 4px;
+}
+.tab-wrap.active {
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+.tab-wrap.active .tab {
+  border: none;
+  background: none;
+}
+.tab-trash {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 8px 0 0;
+}
+.tab-trash:hover {
+  color: var(--danger);
+}
+.trash-open {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--ink-faint);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 11px;
+  cursor: pointer;
+}
+.trash-open:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.restore-btn {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--blue);
+  background: none;
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.restore-btn:hover {
+  background: var(--blue-soft);
+}
 
 /* ---- board ---- */
 .board {
@@ -471,5 +531,221 @@ dialog.card-modal::backdrop {
 }
 .cd-error {
   font-size: 12px;
+  color: var(--danger);
+}
+
+/* ---- attachments: images ---- */
+.attachment-image {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 8px;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.attach-thumb {
+  max-width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 4px;
+  cursor: zoom-in;
+  display: block;
+}
+.attachment-image-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.attachment-image-meta .filename {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+.attachment-image-meta .size {
+  color: var(--ink-faint);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  white-space: nowrap;
+}
+.attachment-image-meta .remove {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+.attachment-image-meta .remove:hover {
+  color: var(--danger);
+}
+.attach-note {
+  font-family: var(--font-body), sans-serif;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  resize: vertical;
+  min-height: 32px;
+}
+.attach-note::placeholder {
+  color: var(--ink-faint);
+}
+
+/* ---- lightbox ---- */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  cursor: zoom-out;
+  padding: 32px;
+}
+.lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 4px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- form fields (login, users) ---- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.field input {
+  font-family: var(--font-body), sans-serif;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 9px 11px;
+}
+.field input:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+/* ---- auth pages ---- */
+.auth-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.auth-card {
+  width: min(360px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.auth-card h1 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 4px 0 6px;
+}
+.auth-submit {
+  background: var(--blue);
+  color: var(--paper);
+  border: none;
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.auth-hint {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  text-align: center;
+  margin: 0;
+}
+
+/* ---- users page ---- */
+.users-page header {
+  justify-content: space-between;
+}
+.users-body {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 28px 22px;
+}
+.users-body h1 {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+.users-sub {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 0 0 20px;
+}
+.user-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 24px;
+}
+.user-form select {
+  font-family: var(--font-body), sans-serif;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 9px;
+}
+.user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--card);
+  font-size: 13px;
+}
+.user-row .user-name {
+  font-weight: 600;
+}
+.user-row .meta {
+  margin-left: auto;
+}
+.user-row .remove {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 16px;
+}
+.user-row .remove:hover {
   color: var(--danger);
 }

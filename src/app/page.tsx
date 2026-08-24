@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { BoardData, Card, Column } from "@/lib/store";
 
 const TAG_LABELS: Record<Card["tag"], string> = {
@@ -23,10 +25,17 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+function isImage(mime: string) {
+  return mime.startsWith("image/");
+}
+
 type Selected = { projectId: string; colId: string; cardId: string };
+type Me = { username: string; role: "admin" | "member" };
 
 export default function Home() {
+  const router = useRouter();
   const [board, setBoard] = useState<BoardData | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState("");
@@ -36,18 +45,26 @@ export default function Home() {
   const [selected, setSelected] = useState<Selected | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const dragData = useRef<{ cardId: string; fromColId: string } | null>(null);
   const colRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const trashDialogRef = useRef<HTMLDialogElement | null>(null);
 
   useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setMe)
+      .catch(() => setMe(null));
     fetch("/api/board")
       .then((r) => r.json())
       .then((data: BoardData) => {
         setBoard(data);
-        setActiveProjectId(data.projects[0]?.id ?? "");
+        const firstActive = data.projects.find((p) => !p.archived);
+        setActiveProjectId(firstActive?.id ?? "");
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -56,6 +73,10 @@ export default function Home() {
   useEffect(() => {
     if (selected) dialogRef.current?.showModal();
   }, [selected]);
+
+  useEffect(() => {
+    if (trashOpen) trashDialogRef.current?.showModal();
+  }, [trashOpen]);
 
   function persist(next: BoardData) {
     fetch("/api/board", {
@@ -80,7 +101,15 @@ export default function Home() {
     });
   }
 
-  const activeProject = board?.projects.find((p) => p.id === activeProjectId);
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
+
+  const visibleProjects = board?.projects.filter((p) => !p.archived) ?? [];
+  const archivedProjects = board?.projects.filter((p) => p.archived) ?? [];
+  const activeProject = visibleProjects.find((p) => p.id === activeProjectId);
 
   function addProject() {
     const name = window.prompt("Nom du nouveau projet :");
@@ -90,14 +119,45 @@ export default function Home() {
       b.projects.push({
         id,
         name: name.trim(),
+        archived: false,
         columns: [
           { id: "todo", name: "À faire", cards: [] },
           { id: "doing", name: "En cours", cards: [] },
+          { id: "review", name: "En cours de validation", cards: [] },
           { id: "done", name: "Terminé", cards: [] },
+          { id: "closed", name: "Fermé", cards: [] },
         ],
       });
     });
     setActiveProjectId(id);
+  }
+
+  function archiveProject(projectId: string) {
+    if (!window.confirm("Mettre ce projet à la corbeille ? Tu pourras le restaurer plus tard.")) return;
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === projectId);
+      if (project) {
+        project.archived = true;
+        project.archivedAt = new Date().toISOString();
+      }
+    });
+    if (projectId === activeProjectId) {
+      const next = visibleProjects.find((p) => p.id !== projectId);
+      setActiveProjectId(next?.id ?? "");
+    }
+  }
+
+  function restoreProject(projectId: string) {
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === projectId);
+      if (project) {
+        project.archived = false;
+        project.archivedAt = undefined;
+      }
+    });
+    setActiveProjectId(projectId);
+    trashDialogRef.current?.close();
+    setTrashOpen(false);
   }
 
   function addCard(colId: string) {
@@ -223,6 +283,13 @@ export default function Home() {
     });
   }
 
+  function updateAttachmentNote(attachmentId: string, note: string) {
+    updateSelectedCard((card) => {
+      const att = card.attachments.find((a) => a.id === attachmentId);
+      if (att) att.note = note;
+    });
+  }
+
   if (loading) {
     return <p style={{ padding: 22, fontFamily: "var(--font-mono)" }}>Chargement…</p>;
   }
@@ -243,20 +310,47 @@ export default function Home() {
           <span className="lock">🔒 privé</span>
         </div>
         <div className="tabs">
-          {board.projects.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={"tab" + (p.id === activeProjectId ? " active" : "")}
-              onClick={() => setActiveProjectId(p.id)}
-            >
-              {p.name}
-            </button>
+          {visibleProjects.map((p) => (
+            <div key={p.id} className={"tab-wrap" + (p.id === activeProjectId ? " active" : "")}>
+              <button
+                type="button"
+                className={"tab" + (p.id === activeProjectId ? " active" : "")}
+                onClick={() => setActiveProjectId(p.id)}
+              >
+                {p.name}
+              </button>
+              {p.id === activeProjectId && (
+                <button
+                  type="button"
+                  className="tab-trash"
+                  title="Mettre à la corbeille"
+                  onClick={() => archiveProject(p.id)}
+                >
+                  🗑
+                </button>
+              )}
+            </div>
           ))}
           <button type="button" className="tab-add" onClick={addProject}>
             + projet
           </button>
         </div>
+        <button type="button" className="trash-open" onClick={() => setTrashOpen(true)}>
+          🗑 Corbeille {archivedProjects.length > 0 ? `(${archivedProjects.length})` : ""}
+        </button>
+        {me && (
+          <div className="user-badge">
+            <span>{me.username}</span>
+            {me.role === "admin" && (
+              <Link className="tab" href="/users">
+                Utilisateurs
+              </Link>
+            )}
+            <button type="button" className="tab" onClick={handleLogout}>
+              Déconnexion
+            </button>
+          </div>
+        )}
         {saveError && <span className="cd-error">{saveError}</span>}
       </header>
 
@@ -355,21 +449,13 @@ export default function Home() {
         ))}
       </div>
 
+      {/* ---- card detail ---- */}
       <dialog ref={dialogRef} className="card-modal" onClose={() => setSelected(null)}>
         {selectedCard && (
           <>
             <div className="cd-head">
               <textarea
                 className="cd-title"
-                style={{
-                  border: "none",
-                  background: "none",
-                  color: "inherit",
-                  width: "100%",
-                  resize: "none",
-                  padding: 0,
-                  fontFamily: "inherit",
-                }}
                 rows={2}
                 value={selectedCard.title}
                 onChange={(e) => {
@@ -395,22 +481,51 @@ export default function Home() {
                   <p className="attachment-empty">Aucune pièce jointe.</p>
                 ) : (
                   <div className="attachment-list">
-                    {selectedCard.attachments.map((a) => (
-                      <div className="attachment-item" key={a.id}>
-                        <a href={a.url} target="_blank" rel="noopener noreferrer">
-                          {a.filename}
-                        </a>
-                        <span className="size">{formatSize(a.size)}</span>
-                        <button
-                          type="button"
-                          className="remove"
-                          aria-label="Retirer"
-                          onClick={() => removeAttachment(a.id)}
-                        >
-                          &times;
-                        </button>
-                      </div>
-                    ))}
+                    {selectedCard.attachments.map((a) =>
+                      isImage(a.mime) ? (
+                        <div className="attachment-image" key={a.id}>
+                          <img
+                            src={a.url}
+                            alt={a.filename}
+                            className="attach-thumb"
+                            onClick={() => setLightboxUrl(a.url)}
+                          />
+                          <div className="attachment-image-meta">
+                            <span className="filename">{a.filename}</span>
+                            <span className="size">{formatSize(a.size)}</span>
+                            <button
+                              type="button"
+                              className="remove"
+                              aria-label="Retirer"
+                              onClick={() => removeAttachment(a.id)}
+                            >
+                              &times;
+                            </button>
+                          </div>
+                          <textarea
+                            className="attach-note"
+                            placeholder="Petite note sur cette image…"
+                            defaultValue={a.note ?? ""}
+                            onBlur={(e) => updateAttachmentNote(a.id, e.target.value)}
+                          />
+                        </div>
+                      ) : (
+                        <div className="attachment-item" key={a.id}>
+                          <a href={a.url} target="_blank" rel="noopener noreferrer">
+                            {a.filename}
+                          </a>
+                          <span className="size">{formatSize(a.size)}</span>
+                          <button
+                            type="button"
+                            className="remove"
+                            aria-label="Retirer"
+                            onClick={() => removeAttachment(a.id)}
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      )
+                    )}
                   </div>
                 )}
                 <button
@@ -421,12 +536,7 @@ export default function Home() {
                 >
                   {uploadBusy ? "Envoi…" : "+ ajouter une pièce jointe"}
                 </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  hidden
-                  onChange={handleFileChosen}
-                />
+                <input ref={fileInputRef} type="file" hidden onChange={handleFileChosen} />
                 {uploadError && <p className="cd-error">{uploadError}</p>}
               </div>
 
@@ -437,6 +547,47 @@ export default function Home() {
           </>
         )}
       </dialog>
+
+      {/* ---- trash ---- */}
+      <dialog ref={trashDialogRef} className="card-modal" onClose={() => setTrashOpen(false)}>
+        <div className="cd-head">
+          <span className="cd-title">Corbeille</span>
+          <button
+            type="button"
+            className="cd-close"
+            aria-label="Fermer"
+            onClick={() => {
+              trashDialogRef.current?.close();
+              setTrashOpen(false);
+            }}
+          >
+            &times;
+          </button>
+        </div>
+        <div className="cd-body">
+          {archivedProjects.length === 0 ? (
+            <p className="attachment-empty">La corbeille est vide.</p>
+          ) : (
+            <div className="attachment-list">
+              {archivedProjects.map((p) => (
+                <div className="attachment-item" key={p.id}>
+                  <span style={{ flex: 1 }}>{p.name}</span>
+                  <button type="button" className="restore-btn" onClick={() => restoreProject(p.id)}>
+                    Restaurer
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </dialog>
+
+      {/* ---- lightbox ---- */}
+      {lightboxUrl && (
+        <div className="lightbox" onClick={() => setLightboxUrl(null)}>
+          <img src={lightboxUrl} alt="" />
+        </div>
+      )}
     </>
   );
 }
