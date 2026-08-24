@@ -16,6 +16,7 @@ export type Card = {
   title: string;
   tag: "front" | "backend" | "bug" | "content" | "other";
   meta?: string;
+  description?: string;
   attachments: Attachment[];
 };
 

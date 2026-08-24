@@ -9,15 +9,23 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@tiptap/extension-color": "^3.30.3",
+    "@tiptap/extension-placeholder": "^3.30.3",
+    "@tiptap/extension-text-style": "^3.30.3",
+    "@tiptap/pm": "^3.30.3",
+    "@tiptap/react": "^3.30.3",
+    "@tiptap/starter-kit": "^3.30.3",
     "next": "16.3.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "sanitize-html": "^2.17.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sanitize-html": "^2.16.1",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
     "tailwindcss": "^4",

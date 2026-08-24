@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { BoardData, Card, Column } from "@/lib/store";
+import RichTextEditor from "@/components/RichTextEditor";
 
 const TAG_LABELS: Record<Card["tag"], string> = {
   front: "front",
@@ -389,9 +390,16 @@ export default function Home() {
                   <span className="title">{card.title}</span>
                   <span className="foot-row">
                     <span className="meta">{card.meta || ""}</span>
-                    {card.attachments.length > 0 && (
-                      <span className="clip">📎 {card.attachments.length}</span>
-                    )}
+                    <span className="foot-icons">
+                      {card.description && card.description.replace(/<[^>]+>/g, "").trim() && (
+                        <span className="clip" title="A une description">
+                          📝
+                        </span>
+                      )}
+                      {card.attachments.length > 0 && (
+                        <span className="clip">📎 {card.attachments.length}</span>
+                      )}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -473,6 +481,19 @@ export default function Home() {
               <div className="cd-meta-row">
                 <span className={`tag t-${selectedCard.tag}`}>{TAG_LABELS[selectedCard.tag]}</span>
                 {selectedCard.meta && <span className="meta">{selectedCard.meta}</span>}
+              </div>
+
+              <div>
+                <div className="cd-section-label">Description</div>
+                <RichTextEditor
+                  key={selectedCard.id}
+                  value={selectedCard.description ?? ""}
+                  onSave={(html) => {
+                    updateSelectedCard((c) => {
+                      c.description = html;
+                    });
+                  }}
+                />
               </div>
 
               <div>
