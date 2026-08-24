@@ -739,23 +739,46 @@ dialog.card-modal::backdrop {
   color: var(--ink-faint);
 }
 
-/* ---- lightbox ---- */
-.lightbox {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.82);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
+/* ---- lightbox ----
+   a real <dialog>, not a positioned div: an open <dialog> is promoted to
+   the browser's top layer, which sits above every other dialog's z-index
+   regardless of stacking context. A plain div could never render in front
+   of the card-detail dialog while it's open; this can. */
+dialog.lightbox {
+  border: none;
+  padding: 0;
+  background: transparent;
+  max-width: 92vw;
+  max-height: 92vh;
   cursor: zoom-out;
-  padding: 32px;
+}
+dialog.lightbox::backdrop {
+  background: rgba(0, 0, 0, 0.82);
 }
 .lightbox img {
-  max-width: 100%;
-  max-height: 100%;
+  display: block;
+  max-width: 92vw;
+  max-height: 92vh;
   border-radius: 4px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+.lightbox-close {
+  position: fixed;
+  top: 18px;
+  right: 24px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:hover {
+  background: rgba(0, 0, 0, 0.65);
 }
 
 /* ---- form fields (login, users) ---- */

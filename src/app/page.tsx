@@ -55,6 +55,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const trashDialogRef = useRef<HTMLDialogElement | null>(null);
+  const lightboxRef = useRef<HTMLDialogElement | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -79,6 +80,14 @@ export default function Home() {
   useEffect(() => {
     if (trashOpen) trashDialogRef.current?.showModal();
   }, [trashOpen]);
+
+  useEffect(() => {
+    if (lightboxUrl) lightboxRef.current?.showModal();
+  }, [lightboxUrl]);
+
+  function closeLightbox() {
+    lightboxRef.current?.close();
+  }
 
   function persist(next: BoardData) {
     fetch("/api/board", {
@@ -638,11 +647,28 @@ export default function Home() {
       </dialog>
 
       {/* ---- lightbox ---- */}
-      {lightboxUrl && (
-        <div className="lightbox" onClick={() => setLightboxUrl(null)}>
-          <img src={lightboxUrl} alt="" />
-        </div>
-      )}
+      <dialog
+        ref={lightboxRef}
+        className="lightbox"
+        onClose={() => setLightboxUrl(null)}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) closeLightbox();
+        }}
+      >
+        {lightboxUrl && (
+          <>
+            <button
+              type="button"
+              className="lightbox-close"
+              aria-label="Fermer l'aperçu"
+              onClick={closeLightbox}
+            >
+              &times;
+            </button>
+            <img src={lightboxUrl} alt="" />
+          </>
+        )}
+      </dialog>
     </>
   );
 }
