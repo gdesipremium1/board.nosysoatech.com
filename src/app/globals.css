@@ -483,16 +483,206 @@ dialog.card-modal::backdrop {
   color: var(--paper);
   border-color: var(--blue);
 }
-.label-select {
+/* ---- label picker: a colored pill that IS the current selection (replaces
+   the old plain <select>) opening a dropdown anchored to it ---- */
+.label-wrap {
+  position: relative;
+  flex-shrink: 0;
+  /* lets the pill shrink its own text on very narrow viewports instead of
+     forcing the title-row to overflow */
+  max-width: 45vw;
+}
+.label-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 10px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--lbl, var(--ink-soft)) 18%, var(--paper));
+  color: var(--lbl, var(--ink-soft));
+}
+.label-trigger:hover {
+  filter: brightness(1.08);
+}
+.label-trigger.none {
+  background: var(--paper);
+  color: var(--ink-faint);
+  border-color: var(--line);
+}
+.label-trigger.open {
+  outline: 2px solid var(--lbl, var(--ink-soft));
+  outline-offset: 1px;
+}
+.label-trigger span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.label-trigger .care {
+  flex-shrink: 0;
+  font-size: 9px;
+  opacity: 0.75;
+}
+.label-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 180px;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 88px));
+  max-height: min(260px, calc(85vh - 160px));
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ld-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.ld-row:hover {
+  background: var(--paper);
+}
+.ld-row.selected {
+  border-color: var(--line);
+  background: var(--paper);
+}
+.ld-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ld-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
   color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-none .ld-name {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+.ld-edit-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--ink-faint);
+  opacity: 0;
+}
+.ld-row:hover .ld-edit-btn,
+.ld-row:focus-within .ld-edit-btn {
+  opacity: 1;
+}
+.ld-edit-btn:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+.ld-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 2px;
+}
+.ld-row-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 7px;
+  border-radius: 4px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 8px 6px;
-  max-width: 110px;
-  flex-shrink: 0;
+}
+.ld-row-edit input[type="text"] {
+  font-family: var(--font-body), sans-serif;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  width: 100%;
+}
+.ld-row-edit input[type="text"]:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.ld-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.ld-swatch {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  padding: 0;
+  cursor: pointer;
+}
+.ld-swatch.active {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.ld-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.ld-icon-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+.ld-icon-btn.confirm {
+  background: var(--good);
+  color: var(--paper);
+}
+.ld-icon-btn.confirm:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ld-icon-btn.cancel {
+  background: none;
+  color: var(--ink-faint);
+}
+.ld-icon-btn.cancel:hover {
+  color: var(--ink);
 }
 .add-label-btn {
   flex-shrink: 0;

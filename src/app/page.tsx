@@ -56,6 +56,11 @@ export default function Home() {
   const [labelFormOpen, setLabelFormOpen] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState(PRESET_COLORS[1]);
+  const [labelDropdownOpen, setLabelDropdownOpen] = useState(false);
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [editLabelName, setEditLabelName] = useState("");
+  const [editLabelColor, setEditLabelColor] = useState(PRESET_COLORS[1]);
+  const labelDropdownRef = useRef<HTMLDivElement | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [trashOpen, setTrashOpen] = useState(false);
@@ -95,6 +100,21 @@ export default function Home() {
   useEffect(() => {
     if (lightboxUrl) lightboxRef.current?.showModal();
   }, [lightboxUrl]);
+
+  // Close the label dropdown on an outside click, same as any normal
+  // popover -- the dialog's own click handler doesn't help here since a
+  // click on the trigger button itself must NOT be swallowed as "outside".
+  useEffect(() => {
+    if (!labelDropdownOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!labelDropdownRef.current?.contains(e.target as Node)) {
+        setLabelDropdownOpen(false);
+        setEditingLabelId(null);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [labelDropdownOpen]);
 
   function closeLightbox() {
     lightboxRef.current?.close();
@@ -267,6 +287,8 @@ export default function Home() {
     setLabelFormOpen(false);
     setNewLabelName("");
     setNewLabelColor(PRESET_COLORS[1]);
+    setLabelDropdownOpen(false);
+    setEditingLabelId(null);
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
     setDraft(cloneCard(card));
     setDirty(false);
@@ -400,6 +422,23 @@ export default function Home() {
     });
     setNewLabelName("");
     setLabelFormOpen(false);
+  }
+
+  // Same reasoning as createLabel: a label is shared project-wide, so
+  // renaming/recoloring one commits immediately, not on the card's own
+  // "Enregistrer".
+  function updateLabel(labelId: string, name: string, color: string) {
+    const trimmed = name.trim();
+    if (!trimmed || !selected) return;
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === selected.projectId);
+      const label = project?.labels?.find((l) => l.id === labelId);
+      if (label) {
+        label.name = trimmed;
+        label.color = color;
+      }
+    });
+    setEditingLabelId(null);
   }
 
   if (loading) {
@@ -654,23 +693,142 @@ export default function Home() {
                   >
                     {titleEditing ? "✓" : "✏️"}
                   </button>
-                  <select
-                    className="label-select"
-                    value={draft.labelId ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value || undefined;
-                      updateDraft((c) => {
-                        c.labelId = value;
-                      });
-                    }}
-                  >
-                    <option value="">Sans étiquette</option>
-                    {projectLabels.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="label-wrap" ref={labelDropdownRef}>
+                    <button
+                      type="button"
+                      className={
+                        "label-trigger" +
+                        (!draftLabel ? " none" : "") +
+                        (labelDropdownOpen ? " open" : "")
+                      }
+                      style={
+                        draftLabel
+                          ? ({ "--lbl": draftLabel.color } as React.CSSProperties)
+                          : undefined
+                      }
+                      onClick={() =>
+                        setLabelDropdownOpen((v) => {
+                          if (v) setEditingLabelId(null);
+                          return !v;
+                        })
+                      }
+                    >
+                      <span>{draftLabel ? draftLabel.name : "Sans étiquette"}</span>
+                      <span className="care">▾</span>
+                    </button>
+
+                    {labelDropdownOpen && (
+                      <div className="label-dropdown">
+                        <div
+                          className={"ld-row ld-none" + (!draft.labelId ? " selected" : "")}
+                          onClick={() => {
+                            updateDraft((c) => {
+                              c.labelId = undefined;
+                            });
+                            setLabelDropdownOpen(false);
+                          }}
+                        >
+                          <span className="ld-dot" style={{ background: "var(--ink-faint)" }} />
+                          <span className="ld-name">Sans étiquette</span>
+                        </div>
+                        <div className="ld-sep" />
+                        {projectLabels.map((l) =>
+                          editingLabelId === l.id ? (
+                            <div className="ld-row-edit" key={l.id}>
+                              <input
+                                type="text"
+                                autoFocus
+                                value={editLabelName}
+                                maxLength={20}
+                                onChange={(e) => setEditLabelName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    updateLabel(l.id, editLabelName, editLabelColor);
+                                  }
+                                  if (e.key === "Escape") {
+                                    e.preventDefault();
+                                    setEditingLabelId(null);
+                                  }
+                                }}
+                              />
+                              <div className="ld-swatch-row">
+                                {PRESET_COLORS.map((c) => (
+                                  <button
+                                    key={c}
+                                    type="button"
+                                    className={"ld-swatch" + (editLabelColor === c ? " active" : "")}
+                                    style={{ background: c }}
+                                    aria-label={`Couleur ${c}`}
+                                    onClick={() => setEditLabelColor(c)}
+                                  />
+                                ))}
+                              </div>
+                              <div className="ld-edit-actions">
+                                <button
+                                  type="button"
+                                  className="ld-icon-btn cancel"
+                                  title="Annuler"
+                                  onClick={() => setEditingLabelId(null)}
+                                >
+                                  ✕
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ld-icon-btn confirm"
+                                  title="Enregistrer l'étiquette"
+                                  disabled={!editLabelName.trim()}
+                                  onClick={() => updateLabel(l.id, editLabelName, editLabelColor)}
+                                >
+                                  ✓
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              className={"ld-row" + (draft.labelId === l.id ? " selected" : "")}
+                              key={l.id}
+                            >
+                              <span
+                                className="ld-dot"
+                                style={{ background: l.color }}
+                                onClick={() => {
+                                  updateDraft((c) => {
+                                    c.labelId = l.id;
+                                  });
+                                  setLabelDropdownOpen(false);
+                                }}
+                              />
+                              <span
+                                className="ld-name"
+                                onClick={() => {
+                                  updateDraft((c) => {
+                                    c.labelId = l.id;
+                                  });
+                                  setLabelDropdownOpen(false);
+                                }}
+                              >
+                                {l.name}
+                              </span>
+                              <button
+                                type="button"
+                                className="ld-edit-btn"
+                                title="Modifier cette étiquette"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingLabelId(l.id);
+                                  setEditLabelName(l.name);
+                                  setEditLabelColor(l.color);
+                                }}
+                              >
+                                ✏️
+                              </button>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
                     className={"add-label-btn" + (labelFormOpen ? " active" : "")}
