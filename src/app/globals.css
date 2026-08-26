@@ -274,20 +274,73 @@ header {
 .card.dragging {
   opacity: 0.4;
 }
-.card-group {
+.card.drop-illegal {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+}
+.card-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.caret {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+}
+.caret.leaf {
+  visibility: hidden;
+  cursor: default;
+}
+.caret .tri {
+  display: inline-block;
+  font-size: 9px;
+  transition: transform 0.12s ease;
+}
+.caret .tri.collapsed {
+  transform: rotate(-90deg);
+}
+.childcount {
+  flex-shrink: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+/* ---- nested cards: a tree-node is one card + its (indented) children ----
+   Indentation lives on the .children wrapper, not on .card itself, so a
+   card looks the same regardless of how deep it's nested. */
+.tree-node {
+  display: flex;
+  flex-direction: column;
+}
+.children {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-top: 6px;
+  margin-left: 18px;
+  padding-left: 10px;
+  border-left: 1px dashed var(--line);
 }
-.card.subtask {
-  margin-left: 20px;
-  width: calc(100% - 20px);
-  padding: 8px 10px;
-  border-left: 2px solid var(--blue);
-  cursor: pointer;
+.drop-line {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--blue);
+  margin: 2px 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 22%, transparent);
 }
-.card.subtask .title {
-  font-size: 12px;
+.drop-line.nest {
+  margin-left: 18px;
+  background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent);
 }
 .tag {
   align-self: flex-start;
@@ -919,16 +972,11 @@ dialog.card-modal::backdrop {
   gap: 6px;
   margin-bottom: 8px;
 }
-.subtask-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .subtask-open {
-  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   text-align: left;
   background: var(--paper);
   border: 1px solid var(--line);
@@ -940,24 +988,6 @@ dialog.card-modal::backdrop {
 }
 .subtask-open:hover {
   border-color: var(--blue);
-}
-.subtask-add {
-  display: flex;
-  gap: 8px;
-}
-.subtask-add input {
-  flex: 1;
-  font-family: var(--font-body), sans-serif;
-  font-size: 13px;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 7px 9px;
-}
-.subtask-add input:focus {
-  outline: 2px solid var(--blue);
-  outline-offset: 1px;
 }
 
 /* ---- explicit save bar: nothing on a card persists until this is clicked ---- */

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { BoardData, Card, Column, Label } from "@/lib/store";
+import type { BoardData, Card, Column, Label, Project } from "@/lib/store";
 import RichTextEditor from "@/components/RichTextEditor";
 import ClampBlock from "@/components/ClampBlock";
 import { PRESET_COLORS } from "@/lib/colors";
@@ -32,6 +32,76 @@ function cloneCard(card: Card): Card {
   return JSON.parse(JSON.stringify(card));
 }
 
+// ---- nesting helpers: cards can be nested to any depth via parentId, and
+// a card's descendants can in theory be spread across columns (shouldn't
+// normally happen, but these stay defensive rather than assume it never
+// will). All take a Project so they work both against the live `board`
+// state (for drag-time checks) and against the draft `b` inside
+// updateBoard's mutator (for committing a move). ----
+
+function collectSubtreeIds(project: Project, rootId: string): Set<string> {
+  const all: Card[] = project.columns.flatMap((c) => c.cards);
+  const result = new Set<string>([rootId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const c of all) {
+      if (c.parentId && result.has(c.parentId) && !result.has(c.id)) {
+        result.add(c.id);
+        changed = true;
+      }
+    }
+  }
+  return result;
+}
+
+function isDescendantOf(project: Project, ancestorId: string, nodeId: string): boolean {
+  const all: Card[] = project.columns.flatMap((c) => c.cards);
+  let cur = all.find((c) => c.id === nodeId) ?? null;
+  while (cur?.parentId) {
+    if (cur.parentId === ancestorId) return true;
+    cur = all.find((c) => c.id === cur!.parentId) ?? null;
+  }
+  return false;
+}
+
+function findCardInProject(project: Project, id: string): Card | undefined {
+  for (const col of project.columns) {
+    const found = col.cards.find((c) => c.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+// Where a moved subtree should land when nested under `rootId` (as its
+// last child) or reordered right after it as a sibling: just past every
+// card already occupying that subtree in the array, regardless of whether
+// they happen to sit contiguously.
+function indexAfterSubtree(col: Column, rootId: string): number {
+  const localIds = new Set<string>([rootId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const c of col.cards) {
+      if (c.parentId && localIds.has(c.parentId) && !localIds.has(c.id)) {
+        localIds.add(c.id);
+        changed = true;
+      }
+    }
+  }
+  let maxIdx = -1;
+  col.cards.forEach((c, i) => {
+    if (localIds.has(c.id)) maxIdx = Math.max(maxIdx, i);
+  });
+  return maxIdx + 1;
+}
+
+type DropTarget = {
+  colId: string;
+  mode: "before" | "after" | "nest" | "end";
+  refCardId: string | null; // null only for mode "end" (append as top-level, at the very end of the column)
+} | null;
+
 type Selected = { projectId: string; colId: string; cardId: string };
 type Me = { username: string; role: "admin" | "member" };
 
@@ -49,7 +119,6 @@ export default function Home() {
   const [draft, setDraft] = useState<Card | null>(null);
   const [dirty, setDirty] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
-  const [subtaskTitle, setSubtaskTitle] = useState("");
   const [descEditing, setDescEditing] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [titleEditing, setTitleEditing] = useState(false);
@@ -65,9 +134,12 @@ export default function Home() {
   const [uploadError, setUploadError] = useState("");
   const [trashOpen, setTrashOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const [dropTarget, setDropTarget] = useState<DropTarget>(null);
+  const [illegalDropId, setIllegalDropId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const dragData = useRef<{ cardId: string; fromColId: string } | null>(null);
-  const colRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const trashDialogRef = useRef<HTMLDialogElement | null>(null);
@@ -219,59 +291,139 @@ export default function Home() {
     setAddingInCol(null);
   }
 
-  // Moving a parent card takes its sub-tickets along, so they always stay
-  // visually attached right under it -- sub-tickets are never dragged
-  // independently (see draggable={!card.parentId} on the card button).
-  function moveCard(cardId: string, fromColId: string, toColId: string, toIndex: number) {
+  // Moving a card takes its whole subtree along (children, grandchildren,
+  // ...), so they always stay nested under it wherever it lands -- a card
+  // can become a sibling of another card (mode "before"/"after", same
+  // parent as the reference card), a child of one (mode "nest"), or
+  // top-level in a column (mode "end").
+  function moveSubtree(cardId: string, fromColId: string, target: NonNullable<DropTarget>) {
     if (!activeProjectId) return;
     updateBoard((b) => {
       const project = b.projects.find((p) => p.id === activeProjectId);
       if (!project) return;
       const fromCol = project.columns.find((c) => c.id === fromColId);
-      const toCol = project.columns.find((c) => c.id === toColId);
+      const toCol = project.columns.find((c) => c.id === target.colId);
       if (!fromCol || !toCol) return;
+
+      if (target.mode !== "end") {
+        if (!target.refCardId || target.refCardId === cardId) return;
+        if (isDescendantOf(project, cardId, target.refCardId)) return; // no cycles
+      }
+
       const idx = fromCol.cards.findIndex((c) => c.id === cardId);
       if (idx === -1) return;
-      const [card] = fromCol.cards.splice(idx, 1);
-      let insertAt = toIndex;
-      if (fromCol === toCol && idx < toIndex) insertAt -= 1;
-      toCol.cards.splice(insertAt, 0, card);
+      const [root] = fromCol.cards.splice(idx, 1);
 
-      const children: Card[] = [];
+      // Pull every descendant (any depth) out of wherever it currently is.
+      const subtreeIds = collectSubtreeIds(project, cardId);
+      const descendants: Card[] = [];
       for (const col of project.columns) {
         for (let i = col.cards.length - 1; i >= 0; i--) {
-          if (col.cards[i].parentId === cardId) {
-            children.push(...col.cards.splice(i, 1));
+          if (col.cards[i].id !== cardId && subtreeIds.has(col.cards[i].id)) {
+            descendants.unshift(...col.cards.splice(i, 1));
           }
         }
       }
-      if (children.length) {
-        const parentPos = toCol.cards.indexOf(card);
-        toCol.cards.splice(parentPos + 1, 0, ...children.reverse());
+
+      if (target.mode === "nest") root.parentId = target.refCardId!;
+      else if (target.mode === "end") root.parentId = undefined;
+      else root.parentId = findCardInProject(project, target.refCardId!)?.parentId;
+
+      const moved = [root, ...descendants];
+      let insertAt: number;
+      if (target.mode === "nest" || target.mode === "after") {
+        insertAt = indexAfterSubtree(toCol, target.refCardId!);
+      } else if (target.mode === "before") {
+        const refIdx = toCol.cards.findIndex((c) => c.id === target.refCardId);
+        insertAt = refIdx === -1 ? toCol.cards.length : refIdx;
+      } else {
+        insertAt = toCol.cards.length;
       }
+      toCol.cards.splice(insertAt, 0, ...moved);
     });
   }
 
-  function handleDrop(e: React.DragEvent<HTMLDivElement>, colId: string) {
-    e.preventDefault();
-    setDragoverCol(null);
-    const data = dragData.current;
-    if (!data) return;
-    const container = colRefs.current[colId];
-    let targetIndex = 0;
-    if (container) {
-      const cardEls = Array.from(container.querySelectorAll<HTMLElement>("[data-card-id]"));
-      targetIndex = cardEls.length;
-      for (let i = 0; i < cardEls.length; i++) {
-        const rect = cardEls[i].getBoundingClientRect();
-        if (e.clientY < rect.top + rect.height / 2) {
-          targetIndex = i;
-          break;
-        }
-      }
-    }
-    moveCard(data.cardId, data.fromColId, colId, targetIndex);
+  function toggleCollapsed(cardId: string) {
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cardId)) next.delete(cardId);
+      else next.add(cardId);
+      return next;
+    });
+  }
+
+  function commitDrop() {
+    const drag = dragData.current;
+    const target = dropTarget;
     dragData.current = null;
+    setDropTarget(null);
+    setIllegalDropId(null);
+    setDraggingId(null);
+    setDragoverCol(null);
+    if (!drag || !target) return;
+    moveSubtree(drag.cardId, drag.fromColId, target);
+  }
+
+  function onCardDragStart(e: React.DragEvent, card: Card, colId: string) {
+    dragData.current = { cardId: card.id, fromColId: colId };
+    setDraggingId(card.id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function onCardDragOver(e: React.DragEvent, card: Card, colId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragoverCol(colId);
+    const drag = dragData.current;
+    if (!drag || drag.cardId === card.id || !activeProject) return;
+    if (isDescendantOf(activeProject, drag.cardId, card.id)) {
+      setIllegalDropId(card.id);
+      setDropTarget(null);
+      return;
+    }
+    setIllegalDropId(null);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    const nesting = relX > 30;
+    const next: DropTarget = nesting
+      ? { colId, mode: "nest", refCardId: card.id }
+      : { colId, mode: relY < rect.height / 2 ? "before" : "after", refCardId: card.id };
+    setDropTarget((prev) =>
+      prev && prev.mode === next!.mode && prev.refCardId === next!.refCardId && prev.colId === next!.colId
+        ? prev
+        : next
+    );
+  }
+
+  function onCardDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    commitDrop();
+  }
+
+  function onCardDragEnd() {
+    dragData.current = null;
+    setDropTarget(null);
+    setIllegalDropId(null);
+    setDraggingId(null);
+    setDragoverCol(null);
+  }
+
+  function onColumnDragOver(e: React.DragEvent, colId: string) {
+    e.preventDefault();
+    setDragoverCol(colId);
+    const drag = dragData.current;
+    if (!drag) return;
+    setIllegalDropId(null);
+    setDropTarget((prev) =>
+      prev && prev.mode === "end" && prev.colId === colId ? prev : { colId, mode: "end", refCardId: null }
+    );
+  }
+
+  function onColumnDrop(e: React.DragEvent) {
+    e.preventDefault();
+    commitDrop();
   }
 
   function requestOpenCard(colId: string, card: Card) {
@@ -280,7 +432,6 @@ export default function Home() {
       return;
     }
     setUploadError("");
-    setSubtaskTitle("");
     setDescEditing(false);
     setEditingNoteId(null);
     setTitleEditing(false);
@@ -339,33 +490,13 @@ export default function Home() {
     if (!window.confirm("Supprimer cette carte ? Ses sous-tickets seront supprimés aussi.")) return;
     updateBoard((b) => {
       const project = b.projects.find((p) => p.id === selected.projectId);
-      const col = project?.columns.find((c) => c.id === selected.colId);
-      if (!col) return;
-      col.cards = col.cards.filter((c) => c.id !== selected.cardId && c.parentId !== selected.cardId);
+      if (!project) return;
+      const idsToDelete = collectSubtreeIds(project, selected.cardId);
+      for (const col of project.columns) {
+        col.cards = col.cards.filter((c) => !idsToDelete.has(c.id));
+      }
     });
     dialogRef.current?.close();
-  }
-
-  function addSubtask() {
-    if (!selected || !subtaskTitle.trim()) return;
-    const title = subtaskTitle.trim();
-    updateBoard((b) => {
-      const project = b.projects.find((p) => p.id === selected.projectId);
-      const col = project?.columns.find((c) => c.id === selected.colId);
-      col?.cards.push({ id: newId(), title, attachments: [], parentId: selected.cardId });
-    });
-    setSubtaskTitle("");
-  }
-
-  function deleteSubtask(subtaskId: string) {
-    if (!selected) return;
-    if (!window.confirm("Supprimer ce sous-ticket ?")) return;
-    updateBoard((b) => {
-      const project = b.projects.find((p) => p.id === selected.projectId);
-      const col = project?.columns.find((c) => c.id === selected.colId);
-      if (!col) return;
-      col.cards = col.cards.filter((c) => c.id !== subtaskId);
-    });
   }
 
   async function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
@@ -461,29 +592,55 @@ export default function Home() {
     return activeProject?.labels?.find((l) => l.id === labelId);
   }
 
-  function renderCardButton(card: Card, colId: string, isSubtask: boolean) {
+  function renderCardRow(card: Card, colId: string, childCount: number, isCollapsed: boolean) {
     const label = findLabel(card.labelId);
     return (
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         key={card.id}
-        type="button"
-        className={"card" + (isSubtask ? " subtask" : "")}
+        className={
+          "card" +
+          (illegalDropId === card.id ? " drop-illegal" : "") +
+          (draggingId === card.id ? " dragging" : "")
+        }
         data-card-id={card.id}
-        draggable={!isSubtask}
-        onDragStart={() => {
-          if (isSubtask) return;
-          dragData.current = { cardId: card.id, fromColId: colId };
-        }}
+        draggable
+        onDragStart={(e) => onCardDragStart(e, card, colId)}
+        onDragOver={(e) => onCardDragOver(e, card, colId)}
+        onDrop={onCardDrop}
+        onDragEnd={onCardDragEnd}
         onClick={() => requestOpenCard(colId, card)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            requestOpenCard(colId, card);
+          }
+        }}
       >
-        {label && (
-          <span className="tag" style={labelPillStyle(label.color)}>
-            {label.name}
+        <div className="card-row-head">
+          <button
+            type="button"
+            className={"caret" + (childCount === 0 ? " leaf" : "")}
+            tabIndex={childCount === 0 ? -1 : 0}
+            aria-label={isCollapsed ? "Déplier" : "Replier"}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (childCount > 0) toggleCollapsed(card.id);
+            }}
+          >
+            <span className={"tri" + (isCollapsed ? " collapsed" : "")}>▾</span>
+          </button>
+          {label && (
+            <span className="tag" style={labelPillStyle(label.color)}>
+              {label.name}
+            </span>
+          )}
+          <span className="title" style={card.titleColor ? { color: card.titleColor } : undefined}>
+            {card.title}
           </span>
-        )}
-        <span className="title" style={card.titleColor ? { color: card.titleColor } : undefined}>
-          {card.title}
-        </span>
+          {childCount > 0 && <span className="childcount">{childCount}</span>}
+        </div>
         <span className="foot-row">
           <span className="meta">{card.meta || ""}</span>
           <span className="foot-icons">
@@ -495,7 +652,31 @@ export default function Home() {
             {card.attachments.length > 0 && <span className="clip">📎 {card.attachments.length}</span>}
           </span>
         </span>
-      </button>
+      </div>
+    );
+  }
+
+  // Renders one card plus its whole (indented) descendant tree. `allCards`
+  // is the flat cards array of the column `card` lives in.
+  function renderNode(card: Card, colId: string, allCards: Card[], depth: number): React.ReactNode {
+    const kids = allCards.filter((c) => c.parentId === card.id);
+    const isCollapsed = collapsedIds.has(card.id);
+    return (
+      <div className="tree-node" key={card.id}>
+        {dropTarget?.mode === "before" && dropTarget.colId === colId && dropTarget.refCardId === card.id && (
+          <div className="drop-line" />
+        )}
+        {renderCardRow(card, colId, kids.length, isCollapsed)}
+        {kids.length > 0 && !isCollapsed && (
+          <div className="children">{kids.map((k) => renderNode(k, colId, allCards, depth + 1))}</div>
+        )}
+        {dropTarget?.mode === "nest" && dropTarget.colId === colId && dropTarget.refCardId === card.id && (
+          <div className="drop-line nest" />
+        )}
+        {dropTarget?.mode === "after" && dropTarget.colId === colId && dropTarget.refCardId === card.id && (
+          <div className="drop-line" />
+        )}
+      </div>
     );
   }
 
@@ -563,26 +744,14 @@ export default function Home() {
             </div>
             <div
               className={"col-body" + (dragoverCol === col.id ? " dragover" : "")}
-              ref={(el) => {
-                colRefs.current[col.id] = el;
-              }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragoverCol(col.id);
-              }}
+              onDragOver={(e) => onColumnDragOver(e, col.id)}
               onDragLeave={() => setDragoverCol((c) => (c === col.id ? null : c))}
-              onDrop={(e) => handleDrop(e, col.id)}
+              onDrop={onColumnDrop}
             >
               {col.cards
                 .filter((c) => !c.parentId)
-                .map((card) => (
-                  <div className="card-group" key={card.id}>
-                    {renderCardButton(card, col.id, false)}
-                    {col.cards
-                      .filter((c) => c.parentId === card.id)
-                      .map((child) => renderCardButton(child, col.id, true))}
-                  </div>
-                ))}
+                .map((card) => renderNode(card, col.id, col.cards, 0))}
+              {dropTarget?.mode === "end" && dropTarget.colId === col.id && <div className="drop-line" />}
             </div>
             <div className="quick-add">
               {addingInCol === col.id ? (
@@ -1044,55 +1213,31 @@ export default function Home() {
               <div>
                 <div className="cd-section-label">Sous-tickets</div>
                 {subtasks.length === 0 ? (
-                  <p className="attachment-empty">Aucun sous-ticket.</p>
+                  <p className="attachment-empty">
+                    Aucun sous-ticket. Glisse une carte du tableau sur celle-ci pour l&apos;imbriquer.
+                  </p>
                 ) : (
                   <div className="subtask-list">
-                    {subtasks.map((s) => (
-                      <div className="subtask-row" key={s.id}>
+                    {subtasks.map((s) => {
+                      const sLabel = findLabel(s.labelId);
+                      return (
                         <button
+                          key={s.id}
                           type="button"
                           className="subtask-open"
                           onClick={() => selected && requestOpenCard(selected.colId, s)}
                         >
-                          {(() => {
-                            const sLabel = findLabel(s.labelId);
-                            return sLabel ? (
-                              <span className="tag" style={labelPillStyle(sLabel.color)}>
-                                {sLabel.name}
-                              </span>
-                            ) : null;
-                          })()}
+                          {sLabel && (
+                            <span className="tag" style={labelPillStyle(sLabel.color)}>
+                              {sLabel.name}
+                            </span>
+                          )}
                           <span>{s.title}</span>
                         </button>
-                        <button
-                          type="button"
-                          className="remove"
-                          aria-label="Supprimer le sous-ticket"
-                          onClick={() => deleteSubtask(s.id)}
-                        >
-                          &times;
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
-                <div className="subtask-add">
-                  <input
-                    type="text"
-                    placeholder="Titre du sous-ticket…"
-                    value={subtaskTitle}
-                    onChange={(e) => setSubtaskTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addSubtask();
-                      }
-                    }}
-                  />
-                  <button type="button" className="qa-save" onClick={addSubtask}>
-                    Ajouter
-                  </button>
-                </div>
               </div>
 
               <div className="cd-save-bar">
