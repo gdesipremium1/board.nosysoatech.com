@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { BoardData, Card, Column } from "@/lib/store";
 import RichTextEditor from "@/components/RichTextEditor";
+import ClampBlock from "@/components/ClampBlock";
 import { PRESET_COLORS } from "@/lib/colors";
 
 const TAG_LABELS: Record<Card["tag"], string> = {
@@ -53,6 +54,8 @@ export default function Home() {
   const [dirty, setDirty] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [subtaskTitle, setSubtaskTitle] = useState("");
+  const [descEditing, setDescEditing] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [trashOpen, setTrashOpen] = useState(false);
@@ -257,6 +260,8 @@ export default function Home() {
     }
     setUploadError("");
     setSubtaskTitle("");
+    setDescEditing(false);
+    setEditingNoteId(null);
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
     setDraft(cloneCard(card));
     setDirty(false);
@@ -629,16 +634,34 @@ export default function Home() {
               </div>
 
               <div>
-                <div className="cd-section-label">Description</div>
-                <RichTextEditor
-                  key={draft.id}
-                  value={draft.description ?? ""}
-                  onSave={(html) => {
-                    updateDraft((c) => {
-                      c.description = html;
-                    });
-                  }}
-                />
+                <div className="cd-section-label">
+                  <span>Description</span>
+                  <button
+                    type="button"
+                    className={"edit-icon" + (descEditing ? " editing" : "")}
+                    onClick={() => setDescEditing((v) => !v)}
+                  >
+                    {descEditing ? "✓ Terminer" : "✏️ Modifier"}
+                  </button>
+                </div>
+                {descEditing ? (
+                  <RichTextEditor
+                    key={draft.id}
+                    value={draft.description ?? ""}
+                    onSave={(html) => {
+                      updateDraft((c) => {
+                        c.description = html;
+                      });
+                    }}
+                  />
+                ) : (
+                  <ClampBlock
+                    html={draft.description || ""}
+                    lines={3}
+                    emptyText="Aucune description."
+                    className="desc-view"
+                  />
+                )}
               </div>
 
               <div>
@@ -668,12 +691,32 @@ export default function Home() {
                               &times;
                             </button>
                           </div>
-                          <textarea
-                            className="attach-note"
-                            placeholder="Petite note sur cette image…"
-                            defaultValue={a.note ?? ""}
-                            onBlur={(e) => updateAttachmentNote(a.id, e.target.value)}
-                          />
+                          <div className="note-row">
+                            <span className="cd-section-label">Note</span>
+                            <button
+                              type="button"
+                              className={"edit-icon" + (editingNoteId === a.id ? " editing" : "")}
+                              onClick={() => setEditingNoteId(editingNoteId === a.id ? null : a.id)}
+                            >
+                              {editingNoteId === a.id ? "✓ Terminer" : "✏️ Modifier"}
+                            </button>
+                          </div>
+                          {editingNoteId === a.id ? (
+                            <textarea
+                              className="attach-note"
+                              placeholder="Petite note sur cette image…"
+                              defaultValue={a.note ?? ""}
+                              autoFocus
+                              onBlur={(e) => updateAttachmentNote(a.id, e.target.value)}
+                            />
+                          ) : (
+                            <ClampBlock
+                              text={a.note || ""}
+                              lines={2}
+                              emptyText="Aucune note."
+                              className="note-view"
+                            />
+                          )}
                         </div>
                       ) : (
                         <div className="attachment-item" key={a.id}>
