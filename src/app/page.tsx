@@ -31,6 +31,10 @@ function isImage(mime: string) {
   return mime.startsWith("image/");
 }
 
+function cloneCard(card: Card): Card {
+  return JSON.parse(JSON.stringify(card));
+}
+
 type Selected = { projectId: string; colId: string; cardId: string };
 type Me = { username: string; role: "admin" | "member" };
 
@@ -45,6 +49,10 @@ export default function Home() {
   const [draftTitle, setDraftTitle] = useState("");
   const [dragoverCol, setDragoverCol] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selected | null>(null);
+  const [draft, setDraft] = useState<Card | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [subtaskTitle, setSubtaskTitle] = useState("");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [trashOpen, setTrashOpen] = useState(false);
@@ -187,6 +195,9 @@ export default function Home() {
     setAddingInCol(null);
   }
 
+  // Moving a parent card takes its sub-tickets along, so they always stay
+  // visually attached right under it -- sub-tickets are never dragged
+  // independently (see draggable={!card.parentId} on the card button).
   function moveCard(cardId: string, fromColId: string, toColId: string, toIndex: number) {
     if (!activeProjectId) return;
     updateBoard((b) => {
@@ -201,6 +212,19 @@ export default function Home() {
       let insertAt = toIndex;
       if (fromCol === toCol && idx < toIndex) insertAt -= 1;
       toCol.cards.splice(insertAt, 0, card);
+
+      const children: Card[] = [];
+      for (const col of project.columns) {
+        for (let i = col.cards.length - 1; i >= 0; i--) {
+          if (col.cards[i].parentId === cardId) {
+            children.push(...col.cards.splice(i, 1));
+          }
+        }
+      }
+      if (children.length) {
+        const parentPos = toCol.cards.indexOf(card);
+        toCol.cards.splice(parentPos + 1, 0, ...children.reverse());
+      }
     });
   }
 
@@ -226,44 +250,90 @@ export default function Home() {
     dragData.current = null;
   }
 
-  function openCard(colId: string, card: Card) {
+  function requestOpenCard(colId: string, card: Card) {
     if (!activeProjectId) return;
+    if (dirty && !window.confirm("Fermer sans enregistrer ? Les modifications seront perdues.")) {
+      return;
+    }
     setUploadError("");
+    setSubtaskTitle("");
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
+    setDraft(cloneCard(card));
+    setDirty(false);
   }
 
-  function closeCard() {
+  function requestCloseCard() {
+    if (dirty && !window.confirm("Fermer sans enregistrer ? Les modifications seront perdues.")) {
+      return;
+    }
     dialogRef.current?.close();
-    setSelected(null);
   }
 
-  function getSelectedCard(): Card | null {
+  function getLiveCard(): Card | null {
     if (!selected || !board) return null;
     const project = board.projects.find((p) => p.id === selected.projectId);
     const col = project?.columns.find((c) => c.id === selected.colId);
     return col?.cards.find((c) => c.id === selected.cardId) ?? null;
   }
 
-  function updateSelectedCard(mutator: (c: Card) => void) {
-    if (!selected) return;
+  function updateDraft(mutator: (c: Card) => void) {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const next = cloneCard(prev);
+      mutator(next);
+      return next;
+    });
+    setDirty(true);
+    setSavedFlash(false);
+  }
+
+  function saveCard() {
+    if (!selected || !draft) return;
     updateBoard((b) => {
       const project = b.projects.find((p) => p.id === selected.projectId);
       const col = project?.columns.find((c) => c.id === selected.colId);
-      const card = col?.cards.find((c) => c.id === selected.cardId);
-      if (card) mutator(card);
+      const idx = col?.cards.findIndex((c) => c.id === selected.cardId) ?? -1;
+      if (col && idx !== -1) {
+        col.cards[idx] = { ...col.cards[idx], ...cloneCard(draft) };
+      }
     });
+    setDirty(false);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1800);
   }
 
   function deleteCard() {
     if (!selected) return;
-    if (!window.confirm("Supprimer cette carte ?")) return;
+    if (!window.confirm("Supprimer cette carte ? Ses sous-tickets seront supprimés aussi.")) return;
     updateBoard((b) => {
       const project = b.projects.find((p) => p.id === selected.projectId);
       const col = project?.columns.find((c) => c.id === selected.colId);
       if (!col) return;
-      col.cards = col.cards.filter((c) => c.id !== selected.cardId);
+      col.cards = col.cards.filter((c) => c.id !== selected.cardId && c.parentId !== selected.cardId);
     });
-    closeCard();
+    dialogRef.current?.close();
+  }
+
+  function addSubtask() {
+    if (!selected || !subtaskTitle.trim()) return;
+    const title = subtaskTitle.trim();
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === selected.projectId);
+      const col = project?.columns.find((c) => c.id === selected.colId);
+      col?.cards.push({ id: newId(), title, tag: "other", attachments: [], parentId: selected.cardId });
+    });
+    setSubtaskTitle("");
+  }
+
+  function deleteSubtask(subtaskId: string) {
+    if (!selected) return;
+    if (!window.confirm("Supprimer ce sous-ticket ?")) return;
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === selected.projectId);
+      const col = project?.columns.find((c) => c.id === selected.colId);
+      if (!col) return;
+      col.cards = col.cards.filter((c) => c.id !== subtaskId);
+    });
   }
 
   async function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
@@ -278,7 +348,7 @@ export default function Home() {
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Échec de l'envoi.");
-      updateSelectedCard((card) => {
+      updateDraft((card) => {
         card.attachments.push(json);
       });
     } catch (err) {
@@ -289,13 +359,13 @@ export default function Home() {
   }
 
   function removeAttachment(attachmentId: string) {
-    updateSelectedCard((card) => {
+    updateDraft((card) => {
       card.attachments = card.attachments.filter((a) => a.id !== attachmentId);
     });
   }
 
   function updateAttachmentNote(attachmentId: string, note: string) {
-    updateSelectedCard((card) => {
+    updateDraft((card) => {
       const att = card.attachments.find((a) => a.id === attachmentId);
       if (att) att.note = note;
     });
@@ -308,7 +378,47 @@ export default function Home() {
     return <p style={{ padding: 22 }}>Impossible de charger le tableau.</p>;
   }
 
-  const selectedCard = getSelectedCard();
+  const liveCard = getLiveCard();
+  const subtasks =
+    liveCard && board
+      ? board.projects
+          .find((p) => p.id === selected?.projectId)
+          ?.columns.find((c) => c.id === selected?.colId)
+          ?.cards.filter((c) => c.parentId === liveCard.id) ?? []
+      : [];
+
+  function renderCardButton(card: Card, colId: string, isSubtask: boolean) {
+    return (
+      <button
+        key={card.id}
+        type="button"
+        className={"card" + (isSubtask ? " subtask" : "")}
+        data-card-id={card.id}
+        draggable={!isSubtask}
+        onDragStart={() => {
+          if (isSubtask) return;
+          dragData.current = { cardId: card.id, fromColId: colId };
+        }}
+        onClick={() => requestOpenCard(colId, card)}
+      >
+        <span className={`tag t-${card.tag}`}>{TAG_LABELS[card.tag]}</span>
+        <span className="title" style={card.titleColor ? { color: card.titleColor } : undefined}>
+          {card.title}
+        </span>
+        <span className="foot-row">
+          <span className="meta">{card.meta || ""}</span>
+          <span className="foot-icons">
+            {card.description && card.description.replace(/<[^>]+>/g, "").trim() && (
+              <span className="clip" title="A une description">
+                📝
+              </span>
+            )}
+            {card.attachments.length > 0 && <span className="clip">📎 {card.attachments.length}</span>}
+          </span>
+        </span>
+      </button>
+    );
+  }
 
   return (
     <>
@@ -370,7 +480,7 @@ export default function Home() {
           <div className="col" key={col.id}>
             <div className="col-head">
               <span className="name">{col.name}</span>
-              <span className="count">{col.cards.length}</span>
+              <span className="count">{col.cards.filter((c) => !c.parentId).length}</span>
             </div>
             <div
               className={"col-body" + (dragoverCol === col.id ? " dragover" : "")}
@@ -384,37 +494,16 @@ export default function Home() {
               onDragLeave={() => setDragoverCol((c) => (c === col.id ? null : c))}
               onDrop={(e) => handleDrop(e, col.id)}
             >
-              {col.cards.map((card) => (
-                <button
-                  key={card.id}
-                  type="button"
-                  className="card"
-                  data-card-id={card.id}
-                  draggable
-                  onDragStart={() => {
-                    dragData.current = { cardId: card.id, fromColId: col.id };
-                  }}
-                  onClick={() => openCard(col.id, card)}
-                >
-                  <span className={`tag t-${card.tag}`}>{TAG_LABELS[card.tag]}</span>
-                  <span className="title" style={card.titleColor ? { color: card.titleColor } : undefined}>
-                    {card.title}
-                  </span>
-                  <span className="foot-row">
-                    <span className="meta">{card.meta || ""}</span>
-                    <span className="foot-icons">
-                      {card.description && card.description.replace(/<[^>]+>/g, "").trim() && (
-                        <span className="clip" title="A une description">
-                          📝
-                        </span>
-                      )}
-                      {card.attachments.length > 0 && (
-                        <span className="clip">📎 {card.attachments.length}</span>
-                      )}
-                    </span>
-                  </span>
-                </button>
-              ))}
+              {col.cards
+                .filter((c) => !c.parentId)
+                .map((card) => (
+                  <div className="card-group" key={card.id}>
+                    {renderCardButton(card, col.id, false)}
+                    {col.cards
+                      .filter((c) => c.parentId === card.id)
+                      .map((child) => renderCardButton(child, col.id, true))}
+                  </div>
+                ))}
             </div>
             <div className="quick-add">
               {addingInCol === col.id ? (
@@ -470,19 +559,32 @@ export default function Home() {
       </div>
 
       {/* ---- card detail ---- */}
-      <dialog ref={dialogRef} className="card-modal" onClose={() => setSelected(null)}>
-        {selectedCard && (
+      <dialog
+        ref={dialogRef}
+        className="card-modal"
+        onClose={() => {
+          setSelected(null);
+          setDraft(null);
+          setDirty(false);
+        }}
+        onCancel={(e) => {
+          if (dirty && !window.confirm("Fermer sans enregistrer ? Les modifications seront perdues.")) {
+            e.preventDefault();
+          }
+        }}
+      >
+        {draft && (
           <>
             <div className="cd-head">
               <div className="cd-title-wrap">
                 <input
                   type="text"
                   className="cd-title"
-                  value={selectedCard.title}
-                  style={selectedCard.titleColor ? { color: selectedCard.titleColor } : undefined}
+                  value={draft.title}
+                  style={draft.titleColor ? { color: draft.titleColor } : undefined}
                   onChange={(e) => {
                     const value = e.target.value;
-                    updateSelectedCard((c) => {
+                    updateDraft((c) => {
                       c.title = value;
                     });
                   }}
@@ -492,11 +594,11 @@ export default function Home() {
                     <button
                       key={c}
                       type="button"
-                      className={"title-swatch" + (selectedCard.titleColor === c ? " active" : "")}
+                      className={"title-swatch" + (draft.titleColor === c ? " active" : "")}
                       style={{ background: c }}
                       aria-label={`Couleur du titre ${c}`}
                       onClick={() =>
-                        updateSelectedCard((card) => {
+                        updateDraft((card) => {
                           card.titleColor = c;
                         })
                       }
@@ -507,7 +609,7 @@ export default function Home() {
                     className="title-swatch-clear"
                     title="Retirer la couleur"
                     onClick={() =>
-                      updateSelectedCard((card) => {
+                      updateDraft((card) => {
                         card.titleColor = undefined;
                       })
                     }
@@ -516,23 +618,23 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-              <button type="button" className="cd-close" aria-label="Fermer" onClick={closeCard}>
+              <button type="button" className="cd-close" aria-label="Fermer" onClick={requestCloseCard}>
                 &times;
               </button>
             </div>
             <div className="cd-body">
               <div className="cd-meta-row">
-                <span className={`tag t-${selectedCard.tag}`}>{TAG_LABELS[selectedCard.tag]}</span>
-                {selectedCard.meta && <span className="meta">{selectedCard.meta}</span>}
+                <span className={`tag t-${draft.tag}`}>{TAG_LABELS[draft.tag]}</span>
+                {draft.meta && <span className="meta">{draft.meta}</span>}
               </div>
 
               <div>
                 <div className="cd-section-label">Description</div>
                 <RichTextEditor
-                  key={selectedCard.id}
-                  value={selectedCard.description ?? ""}
+                  key={draft.id}
+                  value={draft.description ?? ""}
                   onSave={(html) => {
-                    updateSelectedCard((c) => {
+                    updateDraft((c) => {
                       c.description = html;
                     });
                   }}
@@ -541,11 +643,11 @@ export default function Home() {
 
               <div>
                 <div className="cd-section-label">Pièces jointes</div>
-                {selectedCard.attachments.length === 0 ? (
+                {draft.attachments.length === 0 ? (
                   <p className="attachment-empty">Aucune pièce jointe.</p>
                 ) : (
                   <div className="attachment-list">
-                    {selectedCard.attachments.map((a) =>
+                    {draft.attachments.map((a) =>
                       isImage(a.mime) ? (
                         <div className="attachment-image" key={a.id}>
                           <img
@@ -602,6 +704,62 @@ export default function Home() {
                 </button>
                 <input ref={fileInputRef} type="file" hidden onChange={handleFileChosen} />
                 {uploadError && <p className="cd-error">{uploadError}</p>}
+              </div>
+
+              <div>
+                <div className="cd-section-label">Sous-tickets</div>
+                {subtasks.length === 0 ? (
+                  <p className="attachment-empty">Aucun sous-ticket.</p>
+                ) : (
+                  <div className="subtask-list">
+                    {subtasks.map((s) => (
+                      <div className="subtask-row" key={s.id}>
+                        <button
+                          type="button"
+                          className="subtask-open"
+                          onClick={() => selected && requestOpenCard(selected.colId, s)}
+                        >
+                          <span className={`tag t-${s.tag}`}>{TAG_LABELS[s.tag]}</span>
+                          <span>{s.title}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="remove"
+                          aria-label="Supprimer le sous-ticket"
+                          onClick={() => deleteSubtask(s.id)}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="subtask-add">
+                  <input
+                    type="text"
+                    placeholder="Titre du sous-ticket…"
+                    value={subtaskTitle}
+                    onChange={(e) => setSubtaskTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addSubtask();
+                      }
+                    }}
+                  />
+                  <button type="button" className="qa-save" onClick={addSubtask}>
+                    Ajouter
+                  </button>
+                </div>
+              </div>
+
+              <div className="cd-save-bar">
+                <button type="button" className="btn-save" disabled={!dirty} onClick={saveCard}>
+                  Enregistrer
+                </button>
+                <span className="cd-save-status">
+                  {dirty ? "Modifications non enregistrées" : savedFlash ? "Enregistré ✓" : ""}
+                </span>
               </div>
 
               <button type="button" className="cd-delete" onClick={deleteCard}>

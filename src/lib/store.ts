@@ -19,6 +19,10 @@ export type Card = {
   meta?: string;
   description?: string;
   attachments: Attachment[];
+  // Sub-tickets are regular cards that reference their parent. They live in
+  // the same column.cards array as everything else -- grouping/indenting
+  // under the parent is purely a render-time concern (see page.tsx).
+  parentId?: string;
 };
 
 export type Column = {
