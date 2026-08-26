@@ -289,7 +289,7 @@ header {
 .card.subtask .title {
   font-size: 12px;
 }
-.card .tag {
+.tag {
   align-self: flex-start;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10.5px;
@@ -297,26 +297,7 @@ header {
   letter-spacing: 0.04em;
   padding: 2px 7px;
   border-radius: 3px;
-}
-.tag.t-front {
-  background: var(--blue-soft);
-  color: var(--blue);
-}
-.tag.t-bug {
-  background: var(--amber-soft);
-  color: var(--amber);
-}
-.tag.t-content {
-  background: var(--good-soft);
-  color: var(--good);
-}
-.tag.t-backend {
-  background: var(--line);
-  color: var(--ink-soft);
-}
-.tag.t-other {
-  background: var(--line);
-  color: var(--ink-soft);
+  font-weight: 500;
 }
 .card .title {
   font-size: 13px;
@@ -444,23 +425,173 @@ dialog.card-modal::backdrop {
   flex-direction: column;
   gap: 8px;
 }
-.cd-title {
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cd-title-view {
+  flex: 1;
+  min-width: 120px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+  padding: 8px 2px;
+}
+.cd-title-input {
   /* same look as the description's Tiptap/ProseMirror box, for visual
      consistency between the two text fields on a card */
-  width: 100%;
+  flex: 1;
+  min-width: 120px;
   font-family: var(--font-body), sans-serif;
   font-size: 15px;
   font-weight: 600;
   line-height: 1.4;
   color: var(--ink);
   background: var(--paper);
-  border: 1px solid var(--line);
+  border: 1px solid var(--blue);
   border-radius: 5px;
   padding: 8px 10px;
 }
-.cd-title:focus {
+.cd-title-input:focus {
   outline: 2px solid var(--blue);
   outline-offset: 1px;
+}
+.pen-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.pen-btn:hover {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+.pen-btn.editing {
+  background: var(--blue);
+  color: var(--paper);
+  border-color: var(--blue);
+}
+.label-select {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 8px 6px;
+  max-width: 110px;
+  flex-shrink: 0;
+}
+.add-label-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--blue);
+  background: var(--paper);
+  border: 1px dashed var(--blue);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.add-label-btn:hover {
+  filter: brightness(0.96);
+}
+.add-label-btn.active {
+  background: var(--blue);
+  color: var(--paper);
+  border-style: solid;
+}
+.new-label-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 12px;
+}
+.new-label-form-head {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.new-label-form input {
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 7px 9px;
+  width: 100%;
+}
+.new-label-form input:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  padding: 0;
+  cursor: pointer;
+}
+.color-swatch.active {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+.create-btn {
+  background: var(--blue);
+  color: var(--paper);
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.create-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.cancel-btn {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 8px 4px;
+}
+.cancel-btn:hover {
+  color: var(--ink);
 }
 .title-colors {
   display: flex;

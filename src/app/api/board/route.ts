@@ -13,12 +13,22 @@ export async function GET() {
 // Every card description is re-sanitized here, server-side, on every save.
 function sanitizeBoard(data: BoardData): void {
   for (const project of data.projects) {
+    if (!Array.isArray(project.labels)) project.labels = [];
+    for (const label of project.labels) {
+      label.name = String(label.name ?? "").trim().slice(0, 24);
+      label.color = sanitizeColor(label.color) ?? "#565f56";
+    }
     for (const column of project.columns) {
       for (const card of column.cards) {
         if (card.description) {
           card.description = sanitizeDescription(card.description);
         }
         card.titleColor = sanitizeColor(card.titleColor);
+        // A label id that no longer exists on the project (deleted label)
+        // just falls back to "no label" instead of pointing at nothing.
+        if (card.labelId && !project.labels.some((l) => l.id === card.labelId)) {
+          card.labelId = undefined;
+        }
       }
     }
   }

@@ -3,18 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { BoardData, Card, Column } from "@/lib/store";
+import type { BoardData, Card, Column, Label } from "@/lib/store";
 import RichTextEditor from "@/components/RichTextEditor";
 import ClampBlock from "@/components/ClampBlock";
 import { PRESET_COLORS } from "@/lib/colors";
 
-const TAG_LABELS: Record<Card["tag"], string> = {
-  front: "front",
-  backend: "backend",
-  bug: "bug",
-  content: "contenu",
-  other: "autre",
-};
+function labelPillStyle(color: string): React.CSSProperties {
+  return { background: `color-mix(in srgb, ${color} 20%, transparent)`, color };
+}
 
 function newId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -56,6 +52,10 @@ export default function Home() {
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [descEditing, setDescEditing] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [labelFormOpen, setLabelFormOpen] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState(PRESET_COLORS[1]);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [trashOpen, setTrashOpen] = useState(false);
@@ -142,6 +142,7 @@ export default function Home() {
         id,
         name: name.trim(),
         archived: false,
+        labels: [],
         columns: [
           { id: "todo", name: "À faire", cards: [] },
           { id: "doing", name: "En cours", cards: [] },
@@ -192,7 +193,7 @@ export default function Home() {
     updateBoard((b) => {
       const project = b.projects.find((p) => p.id === activeProjectId);
       const col = project?.columns.find((c) => c.id === colId);
-      col?.cards.push({ id: newId(), title, tag: "other", attachments: [] });
+      col?.cards.push({ id: newId(), title, attachments: [] });
     });
     setDraftTitle("");
     setAddingInCol(null);
@@ -262,6 +263,10 @@ export default function Home() {
     setSubtaskTitle("");
     setDescEditing(false);
     setEditingNoteId(null);
+    setTitleEditing(false);
+    setLabelFormOpen(false);
+    setNewLabelName("");
+    setNewLabelColor(PRESET_COLORS[1]);
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
     setDraft(cloneCard(card));
     setDirty(false);
@@ -325,7 +330,7 @@ export default function Home() {
     updateBoard((b) => {
       const project = b.projects.find((p) => p.id === selected.projectId);
       const col = project?.columns.find((c) => c.id === selected.colId);
-      col?.cards.push({ id: newId(), title, tag: "other", attachments: [], parentId: selected.cardId });
+      col?.cards.push({ id: newId(), title, attachments: [], parentId: selected.cardId });
     });
     setSubtaskTitle("");
   }
@@ -376,6 +381,25 @@ export default function Home() {
     });
   }
 
+  // A label belongs to the project (reusable on every other card in it), so
+  // creating one commits immediately -- unlike the card's own fields, which
+  // wait for "Enregistrer". Applying it to *this* card still goes through
+  // the draft, same as picking an existing label from the select.
+  function createLabel() {
+    const name = newLabelName.trim();
+    if (!name || !selected) return;
+    const id = newId();
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === selected.projectId);
+      project?.labels.push({ id, name, color: newLabelColor });
+    });
+    updateDraft((c) => {
+      c.labelId = id;
+    });
+    setNewLabelName("");
+    setLabelFormOpen(false);
+  }
+
   if (loading) {
     return <p style={{ padding: 22, fontFamily: "var(--font-mono)" }}>Chargement…</p>;
   }
@@ -384,15 +408,20 @@ export default function Home() {
   }
 
   const liveCard = getLiveCard();
+  const selectedProject = board.projects.find((p) => p.id === selected?.projectId);
   const subtasks =
     liveCard && board
-      ? board.projects
-          .find((p) => p.id === selected?.projectId)
-          ?.columns.find((c) => c.id === selected?.colId)
-          ?.cards.filter((c) => c.parentId === liveCard.id) ?? []
+      ? selectedProject?.columns.find((c) => c.id === selected?.colId)?.cards.filter((c) => c.parentId === liveCard.id) ?? []
       : [];
+  const projectLabels: Label[] = activeProject?.labels ?? [];
+  const draftLabel = draft ? selectedProject?.labels.find((l) => l.id === draft.labelId) : undefined;
+
+  function findLabel(labelId: string | undefined): Label | undefined {
+    return activeProject?.labels.find((l) => l.id === labelId);
+  }
 
   function renderCardButton(card: Card, colId: string, isSubtask: boolean) {
+    const label = findLabel(card.labelId);
     return (
       <button
         key={card.id}
@@ -406,7 +435,11 @@ export default function Home() {
         }}
         onClick={() => requestOpenCard(colId, card)}
       >
-        <span className={`tag t-${card.tag}`}>{TAG_LABELS[card.tag]}</span>
+        {label && (
+          <span className="tag" style={labelPillStyle(label.color)}>
+            {label.name}
+          </span>
+        )}
         <span className="title" style={card.titleColor ? { color: card.titleColor } : undefined}>
           {card.title}
         </span>
@@ -582,56 +615,155 @@ export default function Home() {
           <>
             <div className="cd-head">
               <div className="cd-title-wrap">
-                <input
-                  type="text"
-                  className="cd-title"
-                  value={draft.title}
-                  style={draft.titleColor ? { color: draft.titleColor } : undefined}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    updateDraft((c) => {
-                      c.title = value;
-                    });
-                  }}
-                />
-                <div className="title-colors">
-                  {PRESET_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={"title-swatch" + (draft.titleColor === c ? " active" : "")}
-                      style={{ background: c }}
-                      aria-label={`Couleur du titre ${c}`}
-                      onClick={() =>
-                        updateDraft((card) => {
-                          card.titleColor = c;
-                        })
-                      }
+                <div className="title-row">
+                  {titleEditing ? (
+                    <input
+                      type="text"
+                      className="cd-title-input"
+                      autoFocus
+                      value={draft.title}
+                      style={draft.titleColor ? { color: draft.titleColor } : undefined}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        updateDraft((c) => {
+                          c.title = value;
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          setTitleEditing(false);
+                        }
+                      }}
                     />
-                  ))}
+                  ) : (
+                    <span
+                      className="cd-title-view"
+                      style={draft.titleColor ? { color: draft.titleColor } : undefined}
+                    >
+                      {draft.title}
+                    </span>
+                  )}
                   <button
                     type="button"
-                    className="title-swatch-clear"
-                    title="Retirer la couleur"
-                    onClick={() =>
-                      updateDraft((card) => {
-                        card.titleColor = undefined;
-                      })
-                    }
+                    className={"pen-btn" + (titleEditing ? " editing" : "")}
+                    title="Modifier le titre"
+                    onClick={() => setTitleEditing((v) => !v)}
                   >
-                    &times;
+                    {titleEditing ? "✓" : "✏️"}
+                  </button>
+                  <select
+                    className="label-select"
+                    value={draft.labelId ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value || undefined;
+                      updateDraft((c) => {
+                        c.labelId = value;
+                      });
+                    }}
+                  >
+                    <option value="">Sans étiquette</option>
+                    {projectLabels.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className={"add-label-btn" + (labelFormOpen ? " active" : "")}
+                    title="Créer une étiquette"
+                    onClick={() => setLabelFormOpen((v) => !v)}
+                  >
+                    +
                   </button>
                 </div>
+
+                {titleEditing && (
+                  <div className="title-colors">
+                    {PRESET_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={"title-swatch" + (draft.titleColor === c ? " active" : "")}
+                        style={{ background: c }}
+                        aria-label={`Couleur du titre ${c}`}
+                        onClick={() =>
+                          updateDraft((card) => {
+                            card.titleColor = c;
+                          })
+                        }
+                      />
+                    ))}
+                    <button
+                      type="button"
+                      className="title-swatch-clear"
+                      title="Retirer la couleur"
+                      onClick={() =>
+                        updateDraft((card) => {
+                          card.titleColor = undefined;
+                        })
+                      }
+                    >
+                      &times;
+                    </button>
+                  </div>
+                )}
+
+                {labelFormOpen && (
+                  <div className="new-label-form">
+                    <div className="new-label-form-head">Nouvelle étiquette pour ce projet</div>
+                    <input
+                      type="text"
+                      value={newLabelName}
+                      maxLength={20}
+                      placeholder="Nom de l'étiquette…"
+                      onChange={(e) => setNewLabelName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          createLabel();
+                        }
+                      }}
+                    />
+                    <div className="swatch-row">
+                      {PRESET_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          className={"color-swatch" + (newLabelColor === c ? " active" : "")}
+                          style={{ background: c }}
+                          aria-label={`Couleur ${c}`}
+                          onClick={() => setNewLabelColor(c)}
+                        />
+                      ))}
+                    </div>
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        className="create-btn"
+                        disabled={!newLabelName.trim()}
+                        onClick={createLabel}
+                      >
+                        Créer et appliquer
+                      </button>
+                      <button type="button" className="cancel-btn" onClick={() => setLabelFormOpen(false)}>
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               <button type="button" className="cd-close" aria-label="Fermer" onClick={requestCloseCard}>
                 &times;
               </button>
             </div>
             <div className="cd-body">
-              <div className="cd-meta-row">
-                <span className={`tag t-${draft.tag}`}>{TAG_LABELS[draft.tag]}</span>
-                {draft.meta && <span className="meta">{draft.meta}</span>}
-              </div>
+              {draft.meta && (
+                <div className="cd-meta-row">
+                  <span className="meta">{draft.meta}</span>
+                </div>
+              )}
 
               <div>
                 <div className="cd-section-label">
@@ -762,7 +894,14 @@ export default function Home() {
                           className="subtask-open"
                           onClick={() => selected && requestOpenCard(selected.colId, s)}
                         >
-                          <span className={`tag t-${s.tag}`}>{TAG_LABELS[s.tag]}</span>
+                          {(() => {
+                            const sLabel = findLabel(s.labelId);
+                            return sLabel ? (
+                              <span className="tag" style={labelPillStyle(sLabel.color)}>
+                                {sLabel.name}
+                              </span>
+                            ) : null;
+                          })()}
                           <span>{s.title}</span>
                         </button>
                         <button
