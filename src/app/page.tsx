@@ -391,7 +391,9 @@ export default function Home() {
     const id = newId();
     updateBoard((b) => {
       const project = b.projects.find((p) => p.id === selected.projectId);
-      project?.labels.push({ id, name, color: newLabelColor });
+      if (!project) return;
+      if (!Array.isArray(project.labels)) project.labels = [];
+      project.labels.push({ id, name, color: newLabelColor });
     });
     updateDraft((c) => {
       c.labelId = id;
@@ -414,10 +416,10 @@ export default function Home() {
       ? selectedProject?.columns.find((c) => c.id === selected?.colId)?.cards.filter((c) => c.parentId === liveCard.id) ?? []
       : [];
   const projectLabels: Label[] = activeProject?.labels ?? [];
-  const draftLabel = draft ? selectedProject?.labels.find((l) => l.id === draft.labelId) : undefined;
+  const draftLabel = draft ? selectedProject?.labels?.find((l) => l.id === draft.labelId) : undefined;
 
   function findLabel(labelId: string | undefined): Label | undefined {
-    return activeProject?.labels.find((l) => l.id === labelId);
+    return activeProject?.labels?.find((l) => l.id === labelId);
   }
 
   function renderCardButton(card: Card, colId: string, isSubtask: boolean) {

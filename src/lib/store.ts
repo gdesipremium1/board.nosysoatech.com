@@ -113,8 +113,53 @@ const DEFAULT_BOARD: BoardData = {
   ],
 };
 
+// The old fixed-enum tag system stored `card.tag` with these values. Their
+// ids happen to match the default labels created below one-for-one, except
+// "other" which had no color of its own -- those cards just end up with no
+// label, same as a card that never had a tag.
+const LEGACY_TAG_TO_LABEL_ID: Record<string, string> = {
+  front: "front",
+  bug: "bug",
+  content: "content",
+  backend: "backend",
+};
+
+// Projects/cards created before the label system existed have no `labels`
+// field on the project and still carry the old `card.tag` field instead of
+// `card.labelId`. Backfill/migrate both on every read so the rest of the
+// app can always assume `project.labels` is an array and cards use
+// `labelId`, never the legacy shape.
+function normalizeBoard(data: BoardData): boolean {
+  let changed = false;
+  for (const project of data.projects) {
+    if (!Array.isArray(project.labels)) {
+      project.labels = DEFAULT_LABELS();
+      changed = true;
+    }
+    for (const column of project.columns) {
+      for (const card of column.cards as (Card & { tag?: string })[]) {
+        if (card.tag) {
+          if (!card.labelId && LEGACY_TAG_TO_LABEL_ID[card.tag]) {
+            card.labelId = LEGACY_TAG_TO_LABEL_ID[card.tag];
+          }
+          delete card.tag;
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
 export async function getBoard(): Promise<BoardData> {
-  return readJson<BoardData>(DATA_FILE, DEFAULT_BOARD);
+  const data = await readJson<BoardData>(DATA_FILE, DEFAULT_BOARD);
+  // One-time migration for boards saved before the label system existed --
+  // persist it so this doesn't need to re-run (and re-write the file) on
+  // every single GET.
+  if (normalizeBoard(data)) {
+    await writeJson(DATA_FILE, data);
+  }
+  return data;
 }
 
 export async function saveBoard(data: BoardData): Promise<void> {
