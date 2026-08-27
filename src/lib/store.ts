@@ -17,6 +17,19 @@ export type Label = {
   color: string;
 };
 
+export type Comment = {
+  id: string;
+  authorUsername: string;
+  createdAt: string;
+  editedAt?: string;
+  html: string;
+  attachments: Attachment[];
+  // One level of replies: a top-level comment has parentId undefined, a
+  // reply's parentId points to the top-level comment it replies to. Replies
+  // can't themselves be replied to -- keeps the thread flat and readable.
+  parentId?: string;
+};
+
 export type Card = {
   id: string;
   title: string;
@@ -25,6 +38,7 @@ export type Card = {
   meta?: string;
   description?: string;
   attachments: Attachment[];
+  comments: Comment[];
   // Sub-tickets are regular cards that reference their parent. They live in
   // the same column.cards array as everything else -- grouping/indenting
   // under the parent is purely a render-time concern (see page.tsx).
@@ -82,17 +96,17 @@ const DEFAULT_BOARD: BoardData = {
           id: "todo",
           name: "À faire",
           cards: [
-            { id: "c1", title: "Ajouter les balises hreflang sur les 3 langues", labelId: "front", meta: "SEO", attachments: [] },
-            { id: "c2", title: "Traduire les messages d'erreur de l'API contact selon la langue", labelId: "bug", meta: "i18n", attachments: [] },
-            { id: "c3", title: "Prendre de vraies captures pour les études de cas", labelId: "content", meta: "contenu", attachments: [] },
+            { id: "c1", title: "Ajouter les balises hreflang sur les 3 langues", labelId: "front", meta: "SEO", attachments: [], comments: [] },
+            { id: "c2", title: "Traduire les messages d'erreur de l'API contact selon la langue", labelId: "bug", meta: "i18n", attachments: [], comments: [] },
+            { id: "c3", title: "Prendre de vraies captures pour les études de cas", labelId: "content", meta: "contenu", attachments: [], comments: [] },
           ],
         },
         {
           id: "doing",
           name: "En cours",
           cards: [
-            { id: "c4", title: "Relecture native des textes malgaches (mg.json)", labelId: "content", meta: "i18n", attachments: [] },
-            { id: "c5", title: "Brancher Resend en production sur le VPS", labelId: "backend", meta: "backend", attachments: [] },
+            { id: "c4", title: "Relecture native des textes malgaches (mg.json)", labelId: "content", meta: "i18n", attachments: [], comments: [] },
+            { id: "c5", title: "Brancher Resend en production sur le VPS", labelId: "backend", meta: "backend", attachments: [], comments: [] },
           ],
         },
         { id: "review", name: "En cours de validation", cards: [] },
@@ -100,9 +114,9 @@ const DEFAULT_BOARD: BoardData = {
           id: "done",
           name: "Terminé",
           cards: [
-            { id: "c6", title: "Popup de contact avec loading + accusé de réception", labelId: "front", meta: "terminé", attachments: [] },
-            { id: "c7", title: "Nav fixe, pleine largeur au scroll", labelId: "front", meta: "terminé", attachments: [] },
-            { id: "c8", title: "Routage FR / EN / MG avec next-intl", labelId: "front", meta: "terminé", attachments: [] },
+            { id: "c6", title: "Popup de contact avec loading + accusé de réception", labelId: "front", meta: "terminé", attachments: [], comments: [] },
+            { id: "c7", title: "Nav fixe, pleine largeur au scroll", labelId: "front", meta: "terminé", attachments: [], comments: [] },
+            { id: "c8", title: "Routage FR / EN / MG avec next-intl", labelId: "front", meta: "terminé", attachments: [], comments: [] },
           ],
         },
         { id: "closed", name: "Fermé", cards: [] },
@@ -143,6 +157,10 @@ function normalizeBoard(data: BoardData): boolean {
             card.labelId = LEGACY_TAG_TO_LABEL_ID[card.tag];
           }
           delete card.tag;
+          changed = true;
+        }
+        if (!Array.isArray(card.comments)) {
+          card.comments = [];
           changed = true;
         }
       }

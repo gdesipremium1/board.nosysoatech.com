@@ -10,19 +10,20 @@ import { PRESET_COLORS } from "@/lib/colors";
 type Props = {
   value: string;
   onSave: (html: string) => void;
+  placeholder?: string;
 };
 
 // Note: mount this with a `key` prop that changes per card (e.g.
 // key={card.id}) so the editor's internal state fully resets when the
 // selected card changes -- Tiptap doesn't sync external `value` changes
 // on its own after the initial mount.
-export default function RichTextEditor({ value, onSave }: Props) {
+export default function RichTextEditor({ value, onSave, placeholder = "Description de la carte…" }: Props) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [2, 3] } }),
       TextStyle,
       Color,
-      Placeholder.configure({ placeholder: "Description de la carte…" }),
+      Placeholder.configure({ placeholder }),
     ],
     content: value || "",
     immediatelyRender: false,

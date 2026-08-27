@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { BoardData, Card, Column, Label, Project } from "@/lib/store";
+import type { Attachment, BoardData, Card, Column, Comment, Label, Project } from "@/lib/store";
 import RichTextEditor from "@/components/RichTextEditor";
 import ClampBlock from "@/components/ClampBlock";
 import { PRESET_COLORS } from "@/lib/colors";
@@ -26,6 +26,27 @@ function formatSize(bytes: number) {
 
 function isImage(mime: string) {
   return mime.startsWith("image/");
+}
+
+function initials(username: string): string {
+  return username.slice(0, 2).toUpperCase();
+}
+
+// Deterministic so the same person always gets the same avatar color,
+// without needing to store one.
+function avatarColor(username: string): string {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) hash = (hash * 31 + username.charCodeAt(i)) >>> 0;
+  return PRESET_COLORS[hash % PRESET_COLORS.length];
+}
+
+function formatCommentDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const months = ["jan.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${hh}h${mm}`;
 }
 
 function cloneCard(card: Card): Card {
@@ -105,6 +126,19 @@ type DropTarget = {
 type Selected = { projectId: string; colId: string; cardId: string };
 type Me = { username: string; role: "admin" | "member" };
 
+// The one composer shared by "editing an existing comment" and "replying to
+// one" -- the two are mutually exclusive (starting one cancels the other),
+// same as in the validated mockup.
+type ComposerState = {
+  mode: "edit" | "reply";
+  targetId: string; // comment being edited, or top-level comment being replied to
+  html: string;
+  attachments: Attachment[];
+  key: number; // remounts the RichTextEditor when a different comment is targeted
+  uploadBusy: boolean;
+  uploadError: string;
+} | null;
+
 export default function Home() {
   const router = useRouter();
   const [board, setBoard] = useState<BoardData | null>(null);
@@ -138,9 +172,17 @@ export default function Home() {
   const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const [illegalDropId, setIllegalDropId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [newCommentHtml, setNewCommentHtml] = useState("");
+  const [newCommentAttachments, setNewCommentAttachments] = useState<Attachment[]>([]);
+  const [newCommentKey, setNewCommentKey] = useState(0);
+  const [newCommentUploadBusy, setNewCommentUploadBusy] = useState(false);
+  const [newCommentUploadError, setNewCommentUploadError] = useState("");
+  const [composer, setComposer] = useState<ComposerState>(null);
 
   const dragData = useRef<{ cardId: string; fromColId: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const newCommentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const composerFileInputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const trashDialogRef = useRef<HTMLDialogElement | null>(null);
   const lightboxRef = useRef<HTMLDialogElement | null>(null);
@@ -285,7 +327,7 @@ export default function Home() {
     updateBoard((b) => {
       const project = b.projects.find((p) => p.id === activeProjectId);
       const col = project?.columns.find((c) => c.id === colId);
-      col?.cards.push({ id: newId(), title, attachments: [] });
+      col?.cards.push({ id: newId(), title, attachments: [], comments: [] });
     });
     setDraftTitle("");
     setAddingInCol(null);
@@ -440,6 +482,11 @@ export default function Home() {
     setNewLabelColor(PRESET_COLORS[1]);
     setLabelDropdownOpen(false);
     setEditingLabelId(null);
+    setNewCommentHtml("");
+    setNewCommentAttachments([]);
+    setNewCommentKey((k) => k + 1);
+    setNewCommentUploadError("");
+    setComposer(null);
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
     setDraft(cloneCard(card));
     setDirty(false);
@@ -572,6 +619,131 @@ export default function Home() {
     setEditingLabelId(null);
   }
 
+  // Comments, like labels, commit immediately -- they're a discussion
+  // thread, not part of the card's own draft/Enregistrer flow. Posting one
+  // (or a reply, or an edit) hits the board straight away.
+
+  function resetNewCommentComposer() {
+    setNewCommentHtml("");
+    setNewCommentAttachments([]);
+    setNewCommentKey((k) => k + 1);
+    setNewCommentUploadError("");
+  }
+
+  function publishNewComment() {
+    if (!selected || !me || !newCommentHtml.trim()) return;
+    const comment: Comment = {
+      id: newId(),
+      authorUsername: me.username,
+      createdAt: new Date().toISOString(),
+      html: newCommentHtml,
+      attachments: newCommentAttachments,
+    };
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === selected.projectId);
+      const col = project?.columns.find((c) => c.id === selected.colId);
+      const card = col?.cards.find((c) => c.id === selected.cardId);
+      card?.comments.push(comment);
+    });
+    resetNewCommentComposer();
+  }
+
+  function startReply(commentId: string) {
+    setComposer({ mode: "reply", targetId: commentId, html: "", attachments: [], key: Date.now(), uploadBusy: false, uploadError: "" });
+  }
+
+  function startEditComment(comment: Comment) {
+    setComposer({
+      mode: "edit",
+      targetId: comment.id,
+      html: comment.html,
+      attachments: comment.attachments,
+      key: Date.now(),
+      uploadBusy: false,
+      uploadError: "",
+    });
+  }
+
+  function cancelComposer() {
+    setComposer(null);
+  }
+
+  function saveComposer() {
+    if (!composer || !selected || !me || !composer.html.trim()) return;
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === selected.projectId);
+      const col = project?.columns.find((c) => c.id === selected.colId);
+      const card = col?.cards.find((c) => c.id === selected.cardId);
+      if (!card) return;
+      if (composer.mode === "edit") {
+        const target = card.comments.find((c) => c.id === composer.targetId);
+        if (target) {
+          target.html = composer.html;
+          target.attachments = composer.attachments;
+          target.editedAt = new Date().toISOString();
+        }
+      } else {
+        card.comments.push({
+          id: newId(),
+          authorUsername: me.username,
+          createdAt: new Date().toISOString(),
+          html: composer.html,
+          attachments: composer.attachments,
+          parentId: composer.targetId,
+        });
+      }
+    });
+    setComposer(null);
+  }
+
+  function removeNewCommentAttachment(attachmentId: string) {
+    setNewCommentAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+  }
+
+  function removeComposerAttachment(attachmentId: string) {
+    setComposer((prev) => (prev ? { ...prev, attachments: prev.attachments.filter((a) => a.id !== attachmentId) } : prev));
+  }
+
+  async function uploadFile(file: File): Promise<Attachment> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/upload", { method: "POST", body: form });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Échec de l'envoi.");
+    return json as Attachment;
+  }
+
+  async function handleNewCommentFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setNewCommentUploadError("");
+    setNewCommentUploadBusy(true);
+    try {
+      const att = await uploadFile(file);
+      setNewCommentAttachments((prev) => [...prev, att]);
+    } catch (err) {
+      setNewCommentUploadError(err instanceof Error ? err.message : "Échec de l'envoi.");
+    } finally {
+      setNewCommentUploadBusy(false);
+    }
+  }
+
+  async function handleComposerFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !composer) return;
+    setComposer((prev) => (prev ? { ...prev, uploadError: "", uploadBusy: true } : prev));
+    try {
+      const att = await uploadFile(file);
+      setComposer((prev) => (prev ? { ...prev, attachments: [...prev.attachments, att], uploadBusy: false } : prev));
+    } catch (err) {
+      setComposer((prev) =>
+        prev ? { ...prev, uploadError: err instanceof Error ? err.message : "Échec de l'envoi.", uploadBusy: false } : prev
+      );
+    }
+  }
+
   if (loading) {
     return <p style={{ padding: 22, fontFamily: "var(--font-mono)" }}>Chargement…</p>;
   }
@@ -587,9 +759,128 @@ export default function Home() {
       : [];
   const projectLabels: Label[] = activeProject?.labels ?? [];
   const draftLabel = draft ? selectedProject?.labels?.find((l) => l.id === draft.labelId) : undefined;
+  // Comments read from the live card, not the draft -- posting/editing one
+  // commits immediately (see saveComposer/publishNewComment), same as
+  // sub-tickets above.
+  const allComments: Comment[] = liveCard?.comments ?? [];
+  const topComments = allComments.filter((c) => !c.parentId);
 
   function findLabel(labelId: string | undefined): Label | undefined {
     return activeProject?.labels?.find((l) => l.id === labelId);
+  }
+
+  function repliesOf(commentId: string): Comment[] {
+    return allComments.filter((c) => c.parentId === commentId);
+  }
+
+  function renderComposerBox(saveLabel: string) {
+    if (!composer) return null;
+    return (
+      <div className="mini-editor">
+        <RichTextEditor
+          key={composer.key}
+          value={composer.html}
+          placeholder={composer.mode === "reply" ? "Répondre…" : "Modifier le commentaire…"}
+          onSave={(html) => setComposer((prev) => (prev ? { ...prev, html } : prev))}
+        />
+        {composer.attachments.length > 0 && (
+          <div className="c-attachments">
+            {composer.attachments.map((a) => (
+              <span className="c-chip" key={a.id}>
+                📎 {a.filename} <span className="sz">({formatSize(a.size)})</span>
+                <button
+                  type="button"
+                  className="chip-remove"
+                  aria-label="Retirer la pièce jointe"
+                  onClick={() => removeComposerAttachment(a.id)}
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="mini-actions">
+          <button
+            type="button"
+            className="mini-attach"
+            data-busy={composer.uploadBusy}
+            onClick={() => composerFileInputRef.current?.click()}
+          >
+            {composer.uploadBusy ? "Envoi…" : "📎 Joindre"}
+          </button>
+          <span style={{ flex: 1 }} />
+          <button type="button" className="btn-mini-cancel" onClick={cancelComposer}>
+            Annuler
+          </button>
+          <button type="button" className="btn-mini-save" disabled={!composer.html.trim()} onClick={saveComposer}>
+            {saveLabel}
+          </button>
+        </div>
+        {composer.uploadError && <p className="cd-error">{composer.uploadError}</p>}
+      </div>
+    );
+  }
+
+  function renderComment(c: Comment, isReply: boolean): React.ReactNode {
+    const mine = me?.username === c.authorUsername;
+    const isEditingThis = composer?.mode === "edit" && composer.targetId === c.id;
+    const isReplyingHere = !isReply && composer?.mode === "reply" && composer.targetId === c.id;
+    const replies = isReply ? [] : repliesOf(c.id);
+    return (
+      <div className="comment" key={c.id}>
+        <div className="comment-head">
+          <div className="avatar" style={{ "--av": avatarColor(c.authorUsername) } as React.CSSProperties}>
+            {initials(c.authorUsername)}
+          </div>
+          <span className="c-author">{c.authorUsername}</span>
+          {mine && <span className="c-you">toi</span>}
+          <span className="c-date">{formatCommentDate(c.createdAt)}</span>
+          {c.editedAt && <span className="c-edited">· modifié</span>}
+        </div>
+
+        {isEditingThis ? (
+          renderComposerBox("Enregistrer")
+        ) : (
+          <>
+            <ClampBlock html={c.html} lines={4} emptyText="" className="c-body" />
+            {c.attachments.length > 0 && (
+              <div className="c-attachments">
+                {c.attachments.map((a) => (
+                  <span className="c-chip" key={a.id}>
+                    📎 {a.filename} <span className="sz">({formatSize(a.size)})</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="c-actions">
+              {!isReply && (
+                <button
+                  type="button"
+                  className="c-action-btn"
+                  onClick={() =>
+                    composer?.mode === "reply" && composer.targetId === c.id ? cancelComposer() : startReply(c.id)
+                  }
+                >
+                  ↩ Répondre
+                </button>
+              )}
+              {mine && (
+                <button type="button" className="c-action-btn" onClick={() => startEditComment(c)}>
+                  ✏️ Modifier
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {isReplyingHere && (
+          <div className="c-replies reply-composer">{renderComposerBox("Publier la réponse")}</div>
+        )}
+
+        {replies.length > 0 && <div className="c-replies">{replies.map((r) => renderComment(r, true))}</div>}
+      </div>
+    );
   }
 
   function renderCardRow(card: Card, colId: string, childCount: number, isCollapsed: boolean) {
@@ -1238,6 +1529,74 @@ export default function Home() {
                     })}
                   </div>
                 )}
+              </div>
+
+              <div>
+                <div className="cd-section-label">
+                  <span>Commentaires</span>
+                  {allComments.length > 0 && <span className="count-pill">{allComments.length}</span>}
+                </div>
+                {topComments.length === 0 ? (
+                  <p className="attachment-empty">Aucun commentaire.</p>
+                ) : (
+                  <div className="comment-list">{topComments.map((c) => renderComment(c, false))}</div>
+                )}
+                <div className="composer">
+                  <div className="composer-head">
+                    <div className="avatar" style={{ "--av": avatarColor(me?.username ?? "") } as React.CSSProperties}>
+                      {initials(me?.username ?? "?")}
+                    </div>
+                    <span className="c-author">{me?.username}</span>
+                  </div>
+                  <RichTextEditor
+                    key={newCommentKey}
+                    value={newCommentHtml}
+                    placeholder="Écrire un commentaire…"
+                    onSave={setNewCommentHtml}
+                  />
+                  {newCommentAttachments.length > 0 && (
+                    <div className="c-attachments">
+                      {newCommentAttachments.map((a) => (
+                        <span className="c-chip" key={a.id}>
+                          📎 {a.filename} <span className="sz">({formatSize(a.size)})</span>
+                          <button
+                            type="button"
+                            className="chip-remove"
+                            aria-label="Retirer la pièce jointe"
+                            onClick={() => removeNewCommentAttachment(a.id)}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mini-actions">
+                    <button
+                      type="button"
+                      className="mini-attach"
+                      data-busy={newCommentUploadBusy}
+                      onClick={() => newCommentFileInputRef.current?.click()}
+                    >
+                      {newCommentUploadBusy ? "Envoi…" : "📎 Joindre un fichier"}
+                    </button>
+                    <span style={{ flex: 1 }} />
+                    <button type="button" className="btn-mini-cancel" onClick={resetNewCommentComposer}>
+                      Effacer
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-mini-save"
+                      disabled={!newCommentHtml.trim()}
+                      onClick={publishNewComment}
+                    >
+                      Publier
+                    </button>
+                  </div>
+                  {newCommentUploadError && <p className="cd-error">{newCommentUploadError}</p>}
+                </div>
+                <input ref={newCommentFileInputRef} type="file" hidden onChange={handleNewCommentFile} />
+                <input ref={composerFileInputRef} type="file" hidden onChange={handleComposerFile} />
               </div>
 
               <div className="cd-save-bar">

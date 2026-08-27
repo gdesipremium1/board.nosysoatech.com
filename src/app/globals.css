@@ -990,6 +990,236 @@ dialog.card-modal::backdrop {
   border-color: var(--blue);
 }
 
+/* ---- comments: a discussion thread on the card, independent of the
+   card's own draft/Enregistrer flow -- posting/editing one commits
+   straight to the board, same as labels. ---- */
+.count-pill {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ink-faint);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 1px 7px;
+}
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.comment {
+  display: flex;
+  flex-direction: column;
+}
+.comment-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.avatar {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--paper);
+  background: var(--av, var(--ink-soft));
+}
+.c-author {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.c-you {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--blue);
+  border: 1px solid color-mix(in srgb, var(--blue) 45%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.c-date {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+.c-edited {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+.c-body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+  padding-left: 30px;
+}
+.c-body p {
+  margin: 0 0 8px;
+}
+.c-body p:last-child {
+  margin-bottom: 0;
+}
+.c-body.clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.c-body.empty {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+.c-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 30px;
+  margin-top: 8px;
+}
+.c-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.c-chip .sz {
+  color: var(--ink-faint);
+}
+.chip-remove {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+}
+.chip-remove:hover {
+  color: var(--danger);
+}
+.c-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-left: 30px;
+  margin-top: 8px;
+}
+.c-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.c-action-btn:hover {
+  color: var(--blue);
+}
+.c-replies {
+  margin-left: 30px;
+  margin-top: 10px;
+  padding-left: 12px;
+  border-left: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.c-replies.reply-composer {
+  border-left: none;
+  padding-left: 0;
+}
+.mini-editor {
+  margin-top: 2px;
+}
+.mini-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mini-attach {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.mini-attach:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.mini-attach[data-busy="true"] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.btn-mini-save {
+  font-family: var(--font-body), sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--paper);
+  background: var(--blue);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.btn-mini-save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn-mini-cancel {
+  font-family: var(--font-body), sans-serif;
+  font-size: 12px;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 4px;
+}
+.btn-mini-cancel:hover {
+  color: var(--ink);
+}
+.composer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.composer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.composer-head .c-author {
+  font-size: 12px;
+}
+
 /* ---- explicit save bar: nothing on a card persists until this is clicked ---- */
 .cd-save-bar {
   display: flex;
