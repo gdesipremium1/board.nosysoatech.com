@@ -84,6 +84,12 @@ header {
   align-items: center;
   gap: 2px;
 }
+.wm-icon {
+  height: 22px;
+  width: auto;
+  display: block;
+  margin-right: 6px;
+}
 .wordmark .lock {
   color: var(--ink-faint);
   margin-left: 6px;

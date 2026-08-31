@@ -975,6 +975,7 @@ export default function Home() {
     <>
       <header>
         <div className="wordmark">
+          <img src="/logo-icon.png" alt="" className="wm-icon" />
           <span className="wm-nosy">nosy</span>
           <span className="wm-soa">soa</span>
           <span className="wm-tech">tech</span>
