@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBoard, saveBoard, type BoardData, type Card } from "@/lib/store";
-import { sanitizeDescription, sanitizeColor } from "@/lib/sanitize";
+import { sanitizeDescription, sanitizeInline, sanitizeColor } from "@/lib/sanitize";
 import { getSession } from "@/lib/auth";
 
 export async function GET() {
@@ -82,16 +82,32 @@ function sanitizeBoard(data: BoardData, oldData: BoardData, sessionUsername: str
     }
     for (const column of project.columns) {
       for (const card of column.cards) {
+        const oldCard = oldCardsById.get(card.id);
+        // Title now goes through the same Tiptap editor as description
+        // (bold/color only, no headings/lists -- see RichTextEditor's
+        // `minimal` mode), so it needs the same server-side treatment.
+        // sanitizeInline strips block tags entirely rather than just
+        // discarding them, so the result is always safe to embed inline
+        // (card face, sub-ticket rows, the move menu...). If sanitizing
+        // ever empties it out, fall back to the previous title rather
+        // than persist a blank, unclickable-looking card.
+        card.title = sanitizeInline(card.title || "");
+        if (!card.title.trim()) {
+          card.title = oldCard?.title || "(sans titre)";
+        }
         if (card.description) {
           card.description = sanitizeDescription(card.description);
         }
         card.titleColor = sanitizeColor(card.titleColor);
+        for (const att of card.attachments ?? []) {
+          if (att.note) att.note = sanitizeDescription(att.note);
+        }
         // A label id that no longer exists on the project (deleted label)
         // just falls back to "no label" instead of pointing at nothing.
         if (card.labelId && !project.labels.some((l) => l.id === card.labelId)) {
           card.labelId = undefined;
         }
-        sanitizeComments(card, oldCardsById.get(card.id), sessionUsername);
+        sanitizeComments(card, oldCard, sessionUsername);
       }
     }
   }

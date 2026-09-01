@@ -979,9 +979,11 @@ export default function Home() {
               {label.name}
             </span>
           )}
-          <span className="title" style={card.titleColor ? { color: card.titleColor } : undefined}>
-            {card.title}
-          </span>
+          <span
+            className="title"
+            style={card.titleColor ? { color: card.titleColor } : undefined}
+            dangerouslySetInnerHTML={{ __html: card.title }}
+          />
           {childCount > 0 && <span className="childcount">{childCount}</span>}
         </div>
         <span className="foot-row">
@@ -1171,32 +1173,26 @@ export default function Home() {
               <div className="cd-title-wrap">
                 <div className="title-row">
                   {titleEditing ? (
-                    <input
-                      type="text"
-                      className="cd-title-input"
-                      autoFocus
-                      value={draft.title}
-                      style={draft.titleColor ? { color: draft.titleColor } : undefined}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        updateDraft((c) => {
-                          c.title = value;
-                        });
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          setTitleEditing(false);
-                        }
-                      }}
-                    />
+                    <div className="cd-title-input" style={draft.titleColor ? { color: draft.titleColor } : undefined}>
+                      <RichTextEditor
+                        key={draft.id}
+                        value={draft.title}
+                        minimal
+                        placeholder="Titre de la carte…"
+                        onSave={(html) => {
+                          updateDraft((c) => {
+                            c.title = html;
+                          });
+                        }}
+                        onEnterKey={() => setTitleEditing(false)}
+                      />
+                    </div>
                   ) : (
                     <span
                       className="cd-title-view"
                       style={draft.titleColor ? { color: draft.titleColor } : undefined}
-                    >
-                      {draft.title}
-                    </span>
+                      dangerouslySetInnerHTML={{ __html: draft.title }}
+                    />
                   )}
                   <button
                     type="button"
@@ -1507,16 +1503,15 @@ export default function Home() {
                             </button>
                           </div>
                           {editingNoteId === a.id ? (
-                            <textarea
-                              className="attach-note"
+                            <RichTextEditor
+                              key={a.id}
+                              value={a.note ?? ""}
                               placeholder="Petite note sur cette image…"
-                              defaultValue={a.note ?? ""}
-                              autoFocus
-                              onBlur={(e) => updateAttachmentNote(a.id, e.target.value)}
+                              onSave={(html) => updateAttachmentNote(a.id, html)}
                             />
                           ) : (
                             <ClampBlock
-                              text={a.note || ""}
+                              html={a.note || ""}
                               lines={2}
                               emptyText="Aucune note."
                               className="note-view"
@@ -1576,7 +1571,7 @@ export default function Home() {
                               {sLabel.name}
                             </span>
                           )}
-                          <span>{s.title}</span>
+                          <span dangerouslySetInnerHTML={{ __html: s.title }} />
                         </button>
                       );
                     })}
@@ -1702,7 +1697,7 @@ export default function Home() {
                           onClick={() => handleMove(moveMenuColId, card.id)}
                         >
                           <span className="move-row-icon">↳</span>
-                          <span className="move-row-title">{card.title}</span>
+                          <span className="move-row-title" dangerouslySetInnerHTML={{ __html: card.title }} />
                         </button>
                       ))}
                       {candidateParents(moveMenuColId).length === 0 && (

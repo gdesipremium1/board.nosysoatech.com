@@ -501,23 +501,10 @@ dialog.card-modal::backdrop {
   padding: 8px 2px;
 }
 .cd-title-input {
-  /* same look as the description's Tiptap/ProseMirror box, for visual
-     consistency between the two text fields on a card */
+  /* just sizing -- the box/border itself comes from .rte (RichTextEditor
+     in `minimal` mode below), so this wrapper stays unstyled otherwise */
   flex: 1;
-  min-width: 120px;
-  font-family: var(--font-body), sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--blue);
-  border-radius: 5px;
-  padding: 8px 10px;
-}
-.cd-title-input:focus {
-  outline: 2px solid var(--blue);
-  outline-offset: 1px;
+  min-width: 160px;
 }
 .pen-btn {
   flex-shrink: 0;
@@ -1464,6 +1451,21 @@ dialog.card-modal::backdrop {
   margin: 0 0 8px;
   padding-left: 20px;
 }
+/* ---- minimal mode: the title editor -- no heading button, single line,
+   sized to match .cd-title-view so swapping between read-only and
+   editing doesn't visibly jump ---- */
+.rte-minimal .rte-content {
+  padding: 7px 9px;
+  min-height: 0;
+}
+.rte-minimal .rte-content .ProseMirror {
+  min-height: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.rte-minimal .rte-content .ProseMirror p {
+  margin: 0;
+}
 .rte-content .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   color: var(--ink-faint);
@@ -1546,6 +1548,16 @@ dialog.card-modal::backdrop {
   border-radius: 4px;
   padding: 7px 9px;
 }
+.note-view p {
+  margin: 0 0 6px;
+}
+.note-view p:last-child {
+  margin-bottom: 0;
+}
+.note-view h2,
+.note-view h3 {
+  margin: 0 0 4px;
+}
 .note-view.clamp {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -1617,21 +1629,6 @@ dialog.card-modal::backdrop {
 .attachment-image-meta .remove:hover {
   color: var(--danger);
 }
-.attach-note {
-  font-family: var(--font-body), sans-serif;
-  font-size: 12px;
-  color: var(--ink);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 6px 8px;
-  resize: vertical;
-  min-height: 32px;
-}
-.attach-note::placeholder {
-  color: var(--ink-faint);
-}
-
 /* ---- lightbox ----
    a real <dialog>, not a positioned div: an open <dialog> is promoted to
    the browser's top layer, which sits above every other dialog's z-index

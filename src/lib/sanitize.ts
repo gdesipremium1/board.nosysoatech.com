@@ -34,3 +34,27 @@ export function sanitizeDescription(html: string): string {
     allowedSchemes: [],
   }).trim();
 }
+
+// Titles, attachment notes, sub-ticket titles: same idea as the
+// description, but no block-level tags at all -- "discard" mode unwraps
+// them (keeps the text, drops the tag), so even a raw API call that sends
+// <h2>/<p>/<ul> can't turn a one-line title into a multi-line block. What's
+// left is inline-only HTML, safe to embed inside a <span>/<div>/<button>
+// without ever producing invalid nesting.
+const INLINE_ONLY_TAGS = ["strong", "b", "em", "i", "span"];
+
+export function sanitizeInline(html: string): string {
+  return sanitizeHtml(html, {
+    allowedTags: INLINE_ONLY_TAGS,
+    allowedAttributes: {
+      span: ["style"],
+    },
+    allowedStyles: {
+      span: {
+        color: [/^#[0-9a-fA-F]{3,8}$/, /^rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)$/],
+      },
+    },
+    disallowedTagsMode: "discard",
+    allowedSchemes: [],
+  }).trim();
+}
