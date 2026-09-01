@@ -178,6 +178,9 @@ export default function Home() {
   const [newCommentUploadBusy, setNewCommentUploadBusy] = useState(false);
   const [newCommentUploadError, setNewCommentUploadError] = useState("");
   const [composer, setComposer] = useState<ComposerState>(null);
+  const [moveMenuOpen, setMoveMenuOpen] = useState(false);
+  const [moveMenuColId, setMoveMenuColId] = useState<string>("");
+  const moveMenuRef = useRef<HTMLDivElement | null>(null);
 
   const dragData = useRef<{ cardId: string; fromColId: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -229,6 +232,18 @@ export default function Home() {
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [labelDropdownOpen]);
+
+  // Same pattern for the "Déplacer vers…" panel.
+  useEffect(() => {
+    if (!moveMenuOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!moveMenuRef.current?.contains(e.target as Node)) {
+        setMoveMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [moveMenuOpen]);
 
   function closeLightbox() {
     lightboxRef.current?.close();
@@ -487,6 +502,8 @@ export default function Home() {
     setNewCommentKey((k) => k + 1);
     setNewCommentUploadError("");
     setComposer(null);
+    setMoveMenuOpen(false);
+    setMoveMenuColId(colId);
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
     setDraft(cloneCard(card));
     setDirty(false);
@@ -767,6 +784,41 @@ export default function Home() {
 
   function findLabel(labelId: string | undefined): Label | undefined {
     return activeProject?.labels?.find((l) => l.id === labelId);
+  }
+
+  // "Déplacer vers…" -- a keyboard/mobile-friendly fallback to drag-and-drop
+  // for repositioning a card (drag-and-drop barely works on touch, and has
+  // no keyboard equivalent). Deliberately simpler than the drag gestures:
+  // pick a column, then either "carte de premier niveau" or an existing
+  // card to nest under (always appended as its last child) -- no
+  // before/after sibling precision here, that stays a drag-only nicety.
+  function candidateParents(colId: string): { card: Card; depth: number }[] {
+    if (!selected || !activeProject) return [];
+    const col = activeProject.columns.find((c) => c.id === colId);
+    if (!col) return [];
+    // Can't nest a card under itself or one of its own descendants.
+    const excluded = collectSubtreeIds(activeProject, selected.cardId);
+    const result: { card: Card; depth: number }[] = [];
+    function walk(parentId: string | undefined, depth: number) {
+      col!.cards
+        .filter((c) => c.parentId === parentId && !excluded.has(c.id))
+        .forEach((c) => {
+          result.push({ card: c, depth });
+          walk(c.id, depth + 1);
+        });
+    }
+    walk(undefined, 0);
+    return result;
+  }
+
+  function handleMove(colId: string, refCardId: string | null) {
+    if (!selected) return;
+    const target: NonNullable<DropTarget> = refCardId
+      ? { colId, mode: "nest", refCardId }
+      : { colId, mode: "end", refCardId: null };
+    moveSubtree(selected.cardId, selected.colId, target);
+    setSelected((prev) => (prev ? { ...prev, colId } : prev));
+    setMoveMenuOpen(false);
   }
 
   function repliesOf(commentId: string): Comment[] {
@@ -1607,6 +1659,58 @@ export default function Home() {
                 <span className="cd-save-status">
                   {dirty ? "Modifications non enregistrées" : savedFlash ? "Enregistré ✓" : ""}
                 </span>
+              </div>
+
+              <div className="move-wrap" ref={moveMenuRef}>
+                <button
+                  type="button"
+                  className={"move-trigger" + (moveMenuOpen ? " open" : "")}
+                  onClick={() => setMoveMenuOpen((v) => !v)}
+                >
+                  ↔ Déplacer…
+                </button>
+                {moveMenuOpen && (
+                  <div className="move-panel">
+                    <div className="move-panel-head">Déplacer vers</div>
+                    <div className="move-col-tabs">
+                      {activeProject?.columns.map((col) => (
+                        <button
+                          key={col.id}
+                          type="button"
+                          className={"move-col-tab" + (moveMenuColId === col.id ? " active" : "")}
+                          onClick={() => setMoveMenuColId(col.id)}
+                        >
+                          {col.name}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="move-list">
+                      <button
+                        type="button"
+                        className="move-row"
+                        onClick={() => handleMove(moveMenuColId, null)}
+                      >
+                        <span className="move-row-icon">⇤</span>
+                        <span>Carte de premier niveau</span>
+                      </button>
+                      {candidateParents(moveMenuColId).map(({ card, depth }) => (
+                        <button
+                          key={card.id}
+                          type="button"
+                          className="move-row"
+                          style={{ paddingLeft: 12 + depth * 16 }}
+                          onClick={() => handleMove(moveMenuColId, card.id)}
+                        >
+                          <span className="move-row-icon">↳</span>
+                          <span className="move-row-title">{card.title}</span>
+                        </button>
+                      ))}
+                      {candidateParents(moveMenuColId).length === 0 && (
+                        <p className="move-empty">Aucune autre carte dans cette colonne.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <button type="button" className="cd-delete" onClick={deleteCard}>

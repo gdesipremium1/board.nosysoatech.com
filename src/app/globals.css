@@ -1255,6 +1255,114 @@ dialog.card-modal::backdrop {
   color: var(--ink-faint);
 }
 
+/* ---- "Déplacer vers…" : keyboard/mobile fallback to drag-and-drop ---- */
+.move-wrap {
+  position: relative;
+  align-self: flex-start;
+}
+.move-trigger {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.move-trigger:hover,
+.move-trigger.open {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+.move-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(300px, calc(100vw - 64px));
+  max-height: min(320px, calc(85vh - 160px));
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  padding: 10px;
+  gap: 8px;
+}
+.move-panel-head {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.move-col-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.move-col-tab {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.move-col-tab.active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--paper);
+}
+.move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.move-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.move-row:hover {
+  background: var(--paper);
+}
+.move-row-icon {
+  flex-shrink: 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+.move-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.move-empty {
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-style: italic;
+  padding: 6px 8px;
+  margin: 0;
+}
+
 .cd-delete {
   margin-top: 4px;
   align-self: flex-start;
