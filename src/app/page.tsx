@@ -833,6 +833,7 @@ export default function Home() {
           key={composer.key}
           value={composer.html}
           placeholder={composer.mode === "reply" ? "Répondre…" : "Modifier le commentaire…"}
+          lang={liveCard?.lang ?? "fr"}
           onSave={(html) => setComposer((prev) => (prev ? { ...prev, html } : prev))}
         />
         {composer.attachments.length > 0 && (
@@ -1179,6 +1180,7 @@ export default function Home() {
                         value={draft.title}
                         minimal
                         placeholder="Titre de la carte…"
+                        lang={draft.lang ?? "fr"}
                         onSave={(html) => {
                           updateDraft((c) => {
                             c.title = html;
@@ -1346,6 +1348,22 @@ export default function Home() {
                   >
                     +
                   </button>
+                  <div className="lang-toggle" title="Langue de cette carte (guide la correction orthographique)">
+                    <button
+                      type="button"
+                      className={"lang-btn" + ((draft.lang ?? "fr") === "fr" ? " active" : "")}
+                      onClick={() => updateDraft((c) => { c.lang = "fr"; })}
+                    >
+                      FR
+                    </button>
+                    <button
+                      type="button"
+                      className={"lang-btn" + (draft.lang === "en" ? " active" : "")}
+                      onClick={() => updateDraft((c) => { c.lang = "en"; })}
+                    >
+                      EN
+                    </button>
+                  </div>
                 </div>
 
                 {titleEditing && (
@@ -1449,6 +1467,7 @@ export default function Home() {
                   <RichTextEditor
                     key={draft.id}
                     value={draft.description ?? ""}
+                    lang={draft.lang ?? "fr"}
                     onSave={(html) => {
                       updateDraft((c) => {
                         c.description = html;
@@ -1507,6 +1526,7 @@ export default function Home() {
                               key={a.id}
                               value={a.note ?? ""}
                               placeholder="Petite note sur cette image…"
+                              lang={draft.lang ?? "fr"}
                               onSave={(html) => updateAttachmentNote(a.id, html)}
                             />
                           ) : (
@@ -1600,6 +1620,7 @@ export default function Home() {
                     key={newCommentKey}
                     value={newCommentHtml}
                     placeholder="Écrire un commentaire…"
+                    lang={draft.lang ?? "fr"}
                     onSave={setNewCommentHtml}
                   />
                   {newCommentAttachments.length > 0 && (

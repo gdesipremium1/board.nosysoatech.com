@@ -18,6 +18,12 @@ type Props = {
   // break -- it's meant to stay one line, just with bold/color available.
   minimal?: boolean;
   onEnterKey?: () => void;
+  // Sets the `lang` attribute on the editable DOM node, which is what the
+  // browser's own spellchecker uses to pick a dictionary -- without it,
+  // it just guesses from the browser's UI language and flags perfectly
+  // fine words in the "wrong" one. Defaults to French (this app's
+  // audience); pass "en" for an English card.
+  lang?: "fr" | "en";
 };
 
 // Note: mount this with a `key` prop that changes per card (e.g.
@@ -30,6 +36,7 @@ export default function RichTextEditor({
   placeholder = "Description de la carte…",
   minimal = false,
   onEnterKey,
+  lang = "fr",
 }: Props) {
   const editor = useEditor({
     extensions: [
@@ -80,6 +87,18 @@ export default function RichTextEditor({
         }
       : {}),
   });
+
+  // `content`/`extensions` are only read once at mount (see the note
+  // above), but `lang` can change while this exact editor instance stays
+  // mounted (toggling the card's FR/EN switch while its description is
+  // already open for editing) -- so it's applied directly to the live
+  // ProseMirror DOM node on every change, rather than baked into
+  // editorProps at construction time.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.view.dom.setAttribute("lang", lang);
+    editor.view.dom.setAttribute("spellcheck", "true");
+  }, [editor, lang]);
 
   const [emojiOpen, setEmojiOpen] = useState(false);
   const emojiRef = useRef<HTMLDivElement | null>(null);

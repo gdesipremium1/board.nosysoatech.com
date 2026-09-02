@@ -30,6 +30,8 @@ export type Comment = {
   parentId?: string;
 };
 
+export type CardLang = "fr" | "en";
+
 export type Card = {
   id: string;
   title: string;
@@ -37,6 +39,11 @@ export type Card = {
   labelId?: string;
   meta?: string;
   description?: string;
+  // Drives the `lang` attribute on every editable text field of this card
+  // (title, description, comments, notes), so the browser's own spellchecker
+  // suggests corrections in the right language instead of guessing from its
+  // UI locale. Undefined behaves like "fr" (this app's default audience).
+  lang?: CardLang;
   attachments: Attachment[];
   comments: Comment[];
   // Sub-tickets are regular cards that reference their parent. They live in

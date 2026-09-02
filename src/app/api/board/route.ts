@@ -99,6 +99,7 @@ function sanitizeBoard(data: BoardData, oldData: BoardData, sessionUsername: str
           card.description = sanitizeDescription(card.description);
         }
         card.titleColor = sanitizeColor(card.titleColor);
+        if (card.lang !== "fr" && card.lang !== "en") card.lang = undefined;
         for (const att of card.attachments ?? []) {
           if (att.note) att.note = sanitizeDescription(att.note);
         }
