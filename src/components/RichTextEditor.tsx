@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { Placeholder } from "@tiptap/extension-placeholder";
 import { PRESET_COLORS } from "@/lib/colors";
+import { EMOJI_LIST } from "@/lib/emoji";
 
 type Props = {
   value: string;
@@ -79,6 +81,23 @@ export default function RichTextEditor({
       : {}),
   });
 
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const emojiRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the emoji popover on an outside click -- each editor instance
+  // (title, description, one per comment/note) owns its own picker state,
+  // so this only listens while *this* instance's popover is open.
+  useEffect(() => {
+    if (!emojiOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!emojiRef.current?.contains(e.target as Node)) {
+        setEmojiOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [emojiOpen]);
+
   if (!editor) return null;
 
   return (
@@ -123,6 +142,39 @@ export default function RichTextEditor({
         >
           &times;
         </button>
+        <span className="rte-sep" />
+        <div className="emoji-wrap" ref={emojiRef}>
+          <button
+            type="button"
+            className={"emoji-btn" + (emojiOpen ? " active" : "")}
+            title="Insérer un emoji"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setEmojiOpen((v) => !v)}
+          >
+            😀
+          </button>
+          {emojiOpen && (
+            <div className="emoji-pop">
+              <div className="emoji-pop-head">Choisir un emoji</div>
+              <div className="emoji-grid">
+                {EMOJI_LIST.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    className="emoji-cell"
+                    onMouseDown={(ev) => ev.preventDefault()}
+                    onClick={() => {
+                      editor.chain().focus().insertContent(e).run();
+                      setEmojiOpen(false);
+                    }}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       <EditorContent editor={editor} className="rte-content" />
     </div>
