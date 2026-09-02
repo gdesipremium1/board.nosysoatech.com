@@ -454,7 +454,7 @@ dialog.card-modal {
   border-radius: 5px;
   background: var(--card);
   color: var(--ink);
-  width: min(460px, calc(100vw - 48px));
+  width: min(680px, calc(100vw - 48px));
   max-height: 85vh;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
   display: flex;
