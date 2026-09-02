@@ -28,9 +28,25 @@ export type Comment = {
   // reply's parentId points to the top-level comment it replies to. Replies
   // can't themselves be replied to -- keeps the thread flat and readable.
   parentId?: string;
+  // Cache of this comment's *other*-language html, keyed by that language.
+  // Filled in the first time a card switches to that language; from then
+  // on switching back and forth is instant (no re-translating).
+  translations?: Partial<Record<CardLang, string>>;
 };
 
 export type CardLang = "fr" | "en";
+
+// What gets cached when a card switches away from a language, so switching
+// back doesn't need to re-translate (and doesn't slowly degrade the text
+// through repeated machine-translation round-trips). `labelId` records
+// which label `labelName` was translated *for* -- if the card's label has
+// since changed, the cached name is stale and gets ignored/retranslated.
+export type CardTranslationCache = {
+  title: string;
+  description: string;
+  labelId?: string;
+  labelName?: string;
+};
 
 export type Card = {
   id: string;
@@ -43,7 +59,12 @@ export type Card = {
   // (title, description, comments, notes), so the browser's own spellchecker
   // suggests corrections in the right language instead of guessing from its
   // UI locale. Undefined behaves like "fr" (this app's default audience).
+  // Also the language `title`/`description`/each comment's `html` are
+  // *currently* written in -- switching it translates them (see
+  // /api/translate), caching the outgoing language's text in
+  // `translations` so switching back is instant.
   lang?: CardLang;
+  translations?: Partial<Record<CardLang, CardTranslationCache>>;
   attachments: Attachment[];
   comments: Comment[];
   // Sub-tickets are regular cards that reference their parent. They live in

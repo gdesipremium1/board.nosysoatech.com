@@ -54,6 +54,20 @@ function sanitizeComments(card: Card, oldCard: Card | undefined, sessionUsername
     }
     comment.html = sanitizeDescription(comment.html || "");
     if (!Array.isArray(comment.attachments)) comment.attachments = [];
+    // Cached other-language version of this comment (see /api/translate) --
+    // same sanitizer as the live html, since it's rendered the same way.
+    if (comment.translations && typeof comment.translations === "object") {
+      for (const key of Object.keys(comment.translations)) {
+        if (key !== "fr" && key !== "en") {
+          delete comment.translations[key as "fr" | "en"];
+          continue;
+        }
+        const html = comment.translations[key as "fr" | "en"];
+        comment.translations[key as "fr" | "en"] = sanitizeDescription(html || "");
+      }
+    } else {
+      comment.translations = undefined;
+    }
     // A reply's parentId must point at an existing top-level comment on
     // this same card; anything else collapses it back to top-level rather
     // than leaving it pointing at nothing (or at itself).
@@ -107,6 +121,31 @@ function sanitizeBoard(data: BoardData, oldData: BoardData, sessionUsername: str
         // just falls back to "no label" instead of pointing at nothing.
         if (card.labelId && !project.labels.some((l) => l.id === card.labelId)) {
           card.labelId = undefined;
+        }
+        // Cache of this card's other-language title/description/label name
+        // (see /api/translate) -- same sanitizers as the live fields, since
+        // switching language just swaps this cache in as the live content.
+        if (card.translations && typeof card.translations === "object") {
+          for (const key of Object.keys(card.translations)) {
+            if (key !== "fr" && key !== "en") {
+              delete card.translations[key as "fr" | "en"];
+              continue;
+            }
+            const entry = card.translations[key as "fr" | "en"];
+            if (!entry || typeof entry !== "object") {
+              delete card.translations[key as "fr" | "en"];
+              continue;
+            }
+            entry.title = sanitizeInline(entry.title || "");
+            entry.description = sanitizeDescription(entry.description || "");
+            entry.labelName = entry.labelName ? String(entry.labelName).trim().slice(0, 24) : undefined;
+            if (entry.labelId && !project.labels.some((l) => l.id === entry.labelId)) {
+              entry.labelId = undefined;
+              entry.labelName = undefined;
+            }
+          }
+        } else {
+          card.translations = undefined;
         }
         sanitizeComments(card, oldCard, sessionUsername);
       }

@@ -753,8 +753,10 @@ dialog.card-modal::backdrop {
   color: var(--paper);
   border-style: solid;
 }
-/* ---- FR/EN card language: purely drives the spellcheck `lang` attribute
-   on this card's text fields, not a translation feature ---- */
+/* ---- FR/EN card language: clicking translates this card's title,
+   description and comments (see switchCardLanguage in page.tsx), and also
+   drives the spellcheck `lang` attribute on its text fields while editing
+   in the resulting language ---- */
 .lang-toggle {
   display: flex;
   flex-shrink: 0;
@@ -782,6 +784,16 @@ dialog.card-modal::backdrop {
 .lang-btn.active {
   background: var(--blue);
   color: var(--paper);
+}
+.lang-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.lang-status {
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-style: italic;
+  align-self: center;
 }
 .new-label-form {
   display: flex;

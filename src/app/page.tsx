@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { Attachment, BoardData, Card, Column, Comment, Label, Project } from "@/lib/store";
+import type { Attachment, BoardData, Card, CardLang, Column, Comment, Label, Project } from "@/lib/store";
 import RichTextEditor from "@/components/RichTextEditor";
 import ClampBlock from "@/components/ClampBlock";
 import { PRESET_COLORS } from "@/lib/colors";
@@ -51,6 +51,89 @@ function formatCommentDate(iso: string): string {
 
 function cloneCard(card: Card): Card {
   return JSON.parse(JSON.stringify(card));
+}
+
+// ---- translation helpers ----------------------------------------------
+// MyMemory (see /api/translate) only speaks plain text, not HTML, and only
+// one string at a time. These convert this app's rich text to/from plain
+// strings for that round trip. The trade-off is explicit and deliberate:
+// paragraph breaks survive, but inline formatting (bold, color, headings,
+// list markup) does not -- a translated paragraph always comes back as a
+// plain <p>. Good enough for "I can read what this card says", not meant
+// to preserve the original's styling.
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// A card title is edited in RichTextEditor's `minimal` mode (bold/color,
+// no block tags), so it collapses to a single plain-text run.
+function htmlToPlainInline(html: string): string {
+  if (typeof document === "undefined") return html.replace(/<[^>]+>/g, "").trim();
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  return (div.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+function plainToInlineHtml(text: string): string {
+  return escapeHtml(text.trim());
+}
+
+// A description/comment can have paragraphs, headings and list items --
+// each becomes its own plain-text "paragraph" so translation keeps them
+// separate instead of running everything together.
+function htmlToParagraphs(html: string): string[] {
+  if (typeof document === "undefined") return [];
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  const paras: string[] = [];
+  function pushText(el: Element) {
+    const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (text) paras.push(text);
+  }
+  const blockTags = new Set(["P", "H2", "H3"]);
+  let sawBlock = false;
+  for (const child of Array.from(div.children)) {
+    if (child.tagName === "UL" || child.tagName === "OL") {
+      for (const li of Array.from(child.children)) {
+        if (li.tagName === "LI") {
+          pushText(li);
+          sawBlock = true;
+        }
+      }
+    } else if (blockTags.has(child.tagName)) {
+      pushText(child);
+      sawBlock = true;
+    }
+  }
+  if (!sawBlock) {
+    const text = (div.textContent || "").replace(/\s+/g, " ").trim();
+    if (text) paras.push(text);
+  }
+  return paras;
+}
+
+function paragraphsToHtml(paras: string[]): string {
+  return paras
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p>${escapeHtml(p)}</p>`)
+    .join("");
+}
+
+// The label pill on a card shows this card's own cached translation of its
+// label's name (not a project-wide rename -- other cards using the same
+// label keep showing the original). Label names are treated as authored in
+// French (this app's default), so there's nothing to translate for an "fr"
+// card.
+function displayLabelName(card: Pick<Card, "lang" | "translations" | "labelId">, label: Label | undefined): string | undefined {
+  if (!label) return undefined;
+  const lang = card.lang ?? "fr";
+  if (lang !== "fr") {
+    const cache = card.translations?.[lang];
+    if (cache && cache.labelId === card.labelId && cache.labelName) return cache.labelName;
+  }
+  return label.name;
 }
 
 // ---- nesting helpers: cards can be nested to any depth via parentId, and
@@ -180,6 +263,8 @@ export default function Home() {
   const [composer, setComposer] = useState<ComposerState>(null);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   const [moveMenuColId, setMoveMenuColId] = useState<string>("");
+  const [langSwitching, setLangSwitching] = useState(false);
+  const [langError, setLangError] = useState("");
   const moveMenuRef = useRef<HTMLDivElement | null>(null);
 
   const dragData = useRef<{ cardId: string; fromColId: string } | null>(null);
@@ -504,6 +589,8 @@ export default function Home() {
     setComposer(null);
     setMoveMenuOpen(false);
     setMoveMenuColId(colId);
+    setLangSwitching(false);
+    setLangError("");
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
     setDraft(cloneCard(card));
     setDirty(false);
@@ -634,6 +721,165 @@ export default function Home() {
       }
     });
     setEditingLabelId(null);
+  }
+
+  // Clicking FR/EN translates the card's title, description, label name
+  // (for this card's own display) and comments to that language, and
+  // commits straight away -- like labels/comments, not gated behind
+  // "Enregistrer". The language being left is cached (per card, per
+  // comment) so switching back is instant and doesn't re-translate through
+  // another machine-translation round-trip.
+  async function switchCardLanguage(targetLang: CardLang) {
+    if (!selected || !liveCard || langSwitching) return;
+    const sourceLang: CardLang = liveCard.lang ?? "fr";
+    if (targetLang === sourceLang) return;
+    setLangError("");
+    // Title/description live in the draft until "Enregistrer" -- translating
+    // now would either translate a stale (already-saved) version and orphan
+    // the pending edit, or silently discard it. Simplest safe rule: save
+    // first.
+    if (dirty) {
+      setLangError("Enregistre d'abord tes modifications avant de changer de langue.");
+      return;
+    }
+
+    const label = findLabel(liveCard.labelId);
+    const currentLabelName = displayLabelName(liveCard, label);
+
+    const targetCache = liveCard.translations?.[targetLang];
+    const targetCacheValid = !!targetCache && (!label || targetCache.labelId === liveCard.labelId);
+    const needTitleDesc = !targetCacheValid;
+    const needLabel = needTitleDesc && !!label;
+    const commentsNeeding = liveCard.comments.filter((c) => !c.translations?.[targetLang]);
+
+    let newTitle = targetCacheValid ? targetCache!.title : undefined;
+    let newDescription = targetCacheValid ? targetCache!.description : undefined;
+    let newLabelName = targetCacheValid ? targetCache!.labelName : undefined;
+    const newCommentHtml = new Map<string, string>();
+    for (const c of liveCard.comments) {
+      const cached = c.translations?.[targetLang];
+      if (cached !== undefined) newCommentHtml.set(c.id, cached);
+    }
+
+    if (needTitleDesc || needLabel || commentsNeeding.length > 0) {
+      type Job =
+        | { kind: "title" }
+        | { kind: "description"; paraCount: number }
+        | { kind: "label" }
+        | { kind: "comment"; commentId: string; paraCount: number };
+      const jobs: Job[] = [];
+      const texts: string[] = [];
+
+      if (needTitleDesc) {
+        jobs.push({ kind: "title" });
+        texts.push(htmlToPlainInline(liveCard.title));
+        const descParas = htmlToParagraphs(liveCard.description || "");
+        jobs.push({ kind: "description", paraCount: descParas.length });
+        texts.push(...descParas);
+      }
+      if (needLabel) {
+        jobs.push({ kind: "label" });
+        texts.push(currentLabelName || label!.name);
+      }
+      for (const c of commentsNeeding) {
+        const paras = htmlToParagraphs(c.html);
+        jobs.push({ kind: "comment", commentId: c.id, paraCount: paras.length });
+        texts.push(...paras);
+      }
+
+      setLangSwitching(true);
+      try {
+        let translated: string[] = [];
+        if (texts.length > 0) {
+          const res = await fetch("/api/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texts, from: sourceLang, to: targetLang }),
+          });
+          const json = await res.json();
+          if (!res.ok || !Array.isArray(json.translations)) {
+            throw new Error(json?.error || "Échec de la traduction.");
+          }
+          translated = json.translations;
+        }
+
+        let cursor = 0;
+        for (const job of jobs) {
+          if (job.kind === "title") {
+            newTitle = plainToInlineHtml(translated[cursor] ?? "");
+            cursor += 1;
+          } else if (job.kind === "description") {
+            newDescription = paragraphsToHtml(translated.slice(cursor, cursor + job.paraCount));
+            cursor += job.paraCount;
+          } else if (job.kind === "label") {
+            newLabelName = (translated[cursor] ?? "").trim().slice(0, 24) || label!.name;
+            cursor += 1;
+          } else {
+            newCommentHtml.set(job.commentId, paragraphsToHtml(translated.slice(cursor, cursor + job.paraCount)));
+            cursor += job.paraCount;
+          }
+        }
+      } catch (err) {
+        setLangError(err instanceof Error ? err.message : "Échec de la traduction.");
+        setLangSwitching(false);
+        return;
+      }
+      setLangSwitching(false);
+    }
+
+    // Built once and applied identically to both the live board and the
+    // open draft below, so the label-trigger button (reads the draft) and
+    // the card face (reads the live board) never disagree about which
+    // translated label name is current.
+    const translationsPatch: NonNullable<Card["translations"]> = {
+      [sourceLang]: {
+        title: liveCard.title,
+        description: liveCard.description ?? "",
+        labelId: liveCard.labelId,
+        labelName: currentLabelName,
+      },
+    };
+    if (newLabelName !== undefined) {
+      translationsPatch[targetLang] = {
+        ...(liveCard.translations?.[targetLang] ?? { title: "", description: "" }),
+        labelId: liveCard.labelId,
+        labelName: newLabelName,
+      };
+    }
+
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === selected.projectId);
+      const col = project?.columns.find((c) => c.id === selected.colId);
+      const card = col?.cards.find((c) => c.id === selected.cardId);
+      if (!card) return;
+      card.translations = { ...card.translations, ...translationsPatch };
+      if (newTitle !== undefined) card.title = newTitle;
+      if (newDescription !== undefined) card.description = newDescription;
+      card.lang = targetLang;
+      for (const c of card.comments) {
+        const nc = newCommentHtml.get(c.id);
+        if (nc !== undefined) {
+          if (!c.translations) c.translations = {};
+          c.translations[sourceLang] = c.html;
+          c.html = nc;
+        }
+      }
+    });
+
+    // The draft mirrors title/description/translations while the card is
+    // open; safe to sync it here since we just refused to run with unsaved
+    // changes.
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            title: newTitle ?? prev.title,
+            description: newDescription ?? prev.description,
+            lang: targetLang,
+            translations: { ...prev.translations, ...translationsPatch },
+          }
+        : prev
+    );
   }
 
   // Comments, like labels, commit immediately -- they're a discussion
@@ -977,7 +1223,7 @@ export default function Home() {
           </button>
           {label && (
             <span className="tag" style={labelPillStyle(label.color)}>
-              {label.name}
+              {displayLabelName(card, label)}
             </span>
           )}
           <span
@@ -1224,7 +1470,7 @@ export default function Home() {
                         })
                       }
                     >
-                      <span>{draftLabel ? draftLabel.name : "Sans étiquette"}</span>
+                      <span>{draftLabel ? displayLabelName(draft, draftLabel) : "Sans étiquette"}</span>
                       <span className="care">▾</span>
                     </button>
 
@@ -1348,23 +1594,28 @@ export default function Home() {
                   >
                     +
                   </button>
-                  <div className="lang-toggle" title="Langue de cette carte (guide la correction orthographique)">
+                  <div className="lang-toggle" title="Traduire cette carte (titre, description, commentaires)">
                     <button
                       type="button"
                       className={"lang-btn" + ((draft.lang ?? "fr") === "fr" ? " active" : "")}
-                      onClick={() => updateDraft((c) => { c.lang = "fr"; })}
+                      disabled={langSwitching}
+                      onClick={() => switchCardLanguage("fr")}
                     >
                       FR
                     </button>
                     <button
                       type="button"
                       className={"lang-btn" + (draft.lang === "en" ? " active" : "")}
-                      onClick={() => updateDraft((c) => { c.lang = "en"; })}
+                      disabled={langSwitching}
+                      onClick={() => switchCardLanguage("en")}
                     >
                       EN
                     </button>
                   </div>
+                  {langSwitching && <span className="lang-status">Traduction…</span>}
                 </div>
+
+                {langError && <p className="cd-error">{langError}</p>}
 
                 {titleEditing && (
                   <div className="title-colors">
@@ -1588,7 +1839,7 @@ export default function Home() {
                         >
                           {sLabel && (
                             <span className="tag" style={labelPillStyle(sLabel.color)}>
-                              {sLabel.name}
+                              {displayLabelName(s, sLabel)}
                             </span>
                           )}
                           <span dangerouslySetInnerHTML={{ __html: s.title }} />
