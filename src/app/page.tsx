@@ -286,6 +286,7 @@ export default function Home() {
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState("");
   const [collapsedCommentIds, setCollapsedCommentIds] = useState<Set<string>>(new Set());
+  const [detailsCollapsed, setDetailsCollapsed] = useState(false);
   const [projectLogoBusy, setProjectLogoBusy] = useState(false);
   const [projectLogoError, setProjectLogoError] = useState("");
   const [participantsOpen, setParticipantsOpen] = useState(false);
@@ -309,7 +310,6 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const newCommentFileInputRef = useRef<HTMLInputElement | null>(null);
   const composerFileInputRef = useRef<HTMLInputElement | null>(null);
-  const dialogRef = useRef<HTMLDialogElement | null>(null);
   const trashDialogRef = useRef<HTMLDialogElement | null>(null);
   const lightboxRef = useRef<HTMLDialogElement | null>(null);
 
@@ -329,9 +329,17 @@ export default function Home() {
       .catch(() => setLoading(false));
   }, []);
 
+  // The card panel is a plain positioned <div>, not a <dialog> -- it has no
+  // native ESC handling, so this replaces it. Same dirty-check as clicking
+  // the close button (requestCloseCard/closePanel below).
   useEffect(() => {
-    if (selected) dialogRef.current?.showModal();
-  }, [selected]);
+    if (!selected) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") requestCloseCard();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [selected, dirty]);
 
   useEffect(() => {
     if (trashOpen) trashDialogRef.current?.showModal();
@@ -887,8 +895,17 @@ export default function Home() {
     setLangSwitching(false);
     setLangError("");
     setCollapsedCommentIds(new Set());
+    setDetailsCollapsed(false);
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
     setDraft(cloneCard(card));
+    setDirty(false);
+  }
+
+  // Was the <dialog>'s onClose handler; now the single place that resets
+  // panel state, called directly since there's no native close event.
+  function closePanel() {
+    setSelected(null);
+    setDraft(null);
     setDirty(false);
   }
 
@@ -896,7 +913,7 @@ export default function Home() {
     if (dirty && !window.confirm("Fermer sans enregistrer ? Les modifications seront perdues.")) {
       return;
     }
-    dialogRef.current?.close();
+    closePanel();
   }
 
   function getLiveCard(): Card | null {
@@ -943,7 +960,7 @@ export default function Home() {
         col.cards = col.cards.filter((c) => !idsToDelete.has(c.id));
       }
     });
-    dialogRef.current?.close();
+    closePanel();
   }
 
   async function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1505,6 +1522,10 @@ export default function Home() {
     );
   }
 
+  // Chat-bubble styling (inspired by Messenger/WhatsApp Web, per the
+  // validated mockup), but every underlying mechanic is unchanged from the
+  // card-styled version this replaced: same collapse/cascade/reply/delete
+  // logic, just different markup and classes.
   function renderComment(c: Comment, depth: number): React.ReactNode {
     const mine = me?.username === c.authorUsername;
     const canDelete = mine || canManage;
@@ -1516,92 +1537,87 @@ export default function Home() {
     const isCollapsedByUser = collapsedCommentIds.has(c.id);
     return (
       <div
-        className={"comment" + (focusHidden || manuallyHidden ? " collapsed" : "")}
+        className={"msg-row" + (mine ? " mine" : "") + (focusHidden || manuallyHidden ? " collapsed" : "")}
         style={{ "--av": avatarColor(c.authorUsername) } as React.CSSProperties}
         key={c.id}
       >
-        <div className="comment-head">
-          {replies.length > 0 && (
-            <button
-              type="button"
-              className="comment-collapse-btn"
-              title={isCollapsedByUser ? "Déplier les réponses" : "Réduire les réponses"}
-              onClick={() => toggleCommentCollapsed(c.id)}
-            >
-              {isCollapsedByUser ? "+" : "−"}
-            </button>
-          )}
-          <div className="avatar">{initials(c.authorUsername)}</div>
-          <span className="c-author">{c.authorUsername}</span>
-          {mine && <span className="c-you">toi</span>}
-          <span className="c-date">{formatCommentDate(c.createdAt)}</span>
-          {c.editedAt && <span className="c-edited">· modifié</span>}
-        </div>
+        {replies.length > 0 && (
+          <button
+            type="button"
+            className="comment-collapse-btn"
+            title={isCollapsedByUser ? "Déplier les réponses" : "Réduire les réponses"}
+            onClick={() => toggleCommentCollapsed(c.id)}
+          >
+            {isCollapsedByUser ? "+" : "−"}
+          </button>
+        )}
+        <div className="msg-avatar">{initials(c.authorUsername)}</div>
+        <div className="msg-col">
+          <span className="msg-author">
+            {mine ? "toi" : c.authorUsername}
+            {c.editedAt && <span className="c-edited"> · modifié</span>}
+          </span>
 
-        {isEditingThis ? (
-          renderComposerBox("Enregistrer")
-        ) : (
-          <>
-            <ClampBlock html={c.html} lines={4} emptyText="" className="c-body" />
-            {c.attachments.length > 0 && (
-              <div className="c-attachments">
-                {c.attachments.map((a) => (
-                  <span className="c-chip" key={a.id}>
-                    📎 {a.filename} <span className="sz">({formatSize(a.size)})</span>
-                  </span>
-                ))}
+          {isEditingThis ? (
+            renderComposerBox("Enregistrer")
+          ) : (
+            <>
+              <div className="bubble">
+                <div className="bubble-actions">
+                  <button type="button" title="Répondre" onClick={() => (isReplyingHere ? cancelComposer() : startReply(c.id))}>
+                    ↩
+                  </button>
+                  {mine && (
+                    <button type="button" title="Modifier" onClick={() => startEditComment(c)}>
+                      ✏️
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button type="button" className="danger" title="Supprimer" onClick={() => deleteComment(c.id)}>
+                      🗑
+                    </button>
+                  )}
+                </div>
+                <ClampBlock html={c.html} lines={4} emptyText="" className="c-body" />
+                {c.attachments.length > 0 && (
+                  <div className="c-attachments">
+                    {c.attachments.map((a) => (
+                      <span className="c-chip" key={a.id}>
+                        📎 {a.filename} <span className="sz">({formatSize(a.size)})</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-            {isCollapsedByUser && replies.length > 0 && (
-              <p className="mask-note">
-                {subtreeReplyCount(c.id)} réponse{subtreeReplyCount(c.id) > 1 ? "s" : ""} repliée
-                {subtreeReplyCount(c.id) > 1 ? "s" : ""}
-              </p>
-            )}
-            <div className="c-actions">
-              <button
-                type="button"
-                className="c-action-btn"
-                onClick={() => (isReplyingHere ? cancelComposer() : startReply(c.id))}
-              >
-                ↩ Répondre
-              </button>
-              {mine && (
-                <button type="button" className="c-action-btn" onClick={() => startEditComment(c)}>
-                  ✏️ Modifier
-                </button>
+              <span className="bubble-time">{formatCommentDate(c.createdAt)}</span>
+              {isCollapsedByUser && replies.length > 0 && (
+                <p className="mask-note">
+                  {subtreeReplyCount(c.id)} réponse{subtreeReplyCount(c.id) > 1 ? "s" : ""} repliée
+                  {subtreeReplyCount(c.id) > 1 ? "s" : ""}
+                </p>
               )}
-              {canDelete && (
-                <button
-                  type="button"
-                  className="c-action-btn c-action-danger"
-                  onClick={() => deleteComment(c.id)}
-                >
-                  🗑 Supprimer
-                </button>
+            </>
+          )}
+
+          {isReplyingHere && (
+            <div className="reply-composer" id="reply-composer-box">
+              {renderComposerBox("Publier la réponse")}
+              {hiddenByFocusCount > 0 && (
+                <p className="mask-note">
+                  {hiddenByFocusCount} réponse{hiddenByFocusCount > 1 ? "s" : ""} plus profonde
+                  {hiddenByFocusCount > 1 ? "s" : ""} masquée{hiddenByFocusCount > 1 ? "s" : ""} pendant la rédaction —{" "}
+                  <button type="button" className="mask-note-btn" onClick={cancelComposer}>
+                    tout afficher
+                  </button>
+                </p>
               )}
             </div>
-          </>
-        )}
+          )}
 
-        {isReplyingHere && (
-          <div className="c-replies reply-composer" id="reply-composer-box">
-            {renderComposerBox("Publier la réponse")}
-            {hiddenByFocusCount > 0 && (
-              <p className="mask-note">
-                {hiddenByFocusCount} réponse{hiddenByFocusCount > 1 ? "s" : ""} plus profonde
-                {hiddenByFocusCount > 1 ? "s" : ""} masquée{hiddenByFocusCount > 1 ? "s" : ""} pendant la rédaction —{" "}
-                <button type="button" className="mask-note-btn" onClick={cancelComposer}>
-                  tout afficher
-                </button>
-              </p>
-            )}
-          </div>
-        )}
-
-        {replies.length > 0 && (
-          <div className="c-replies">{replies.map((r) => renderComment(r, depth + 1))}</div>
-        )}
+          {replies.length > 0 && (
+            <div className="cascade">{replies.map((r) => renderComment(r, depth + 1))}</div>
+          )}
+        </div>
       </div>
     );
   }
@@ -1975,22 +1991,13 @@ export default function Home() {
         ))}
       </div>
 
-      {/* ---- card detail ---- */}
-      <dialog
-        ref={dialogRef}
-        className="card-modal"
-        onClose={() => {
-          setSelected(null);
-          setDraft(null);
-          setDirty(false);
-        }}
-        onCancel={(e) => {
-          if (dirty && !window.confirm("Fermer sans enregistrer ? Les modifications seront perdues.")) {
-            e.preventDefault();
-          }
-        }}
-      >
-        {draft && (
+      {/* ---- card detail: a docked side panel (Messenger/WhatsApp Web
+           style), not a centered dialog -- the board stays visible and
+           usable behind it. Card-management fields keep today's exact
+           look in their own collapsible region; comments are chat
+           bubbles below, cascade fully intact. ---- */}
+      {draft && selected && (
+        <div className="card-panel">
           <>
             <div className="cd-head">
               <div className="cd-title-wrap">
@@ -2276,7 +2283,26 @@ export default function Home() {
                 &times;
               </button>
             </div>
-            <div className="cd-body">
+
+            <div className={"details-region" + (detailsCollapsed ? " compact" : "")}>
+              <div
+                className="details-toggle-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => setDetailsCollapsed((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setDetailsCollapsed((v) => !v);
+                  }
+                }}
+              >
+                <span className="details-heading">Détails de la carte</span>
+                <span className="details-collapse-btn" aria-hidden="true">
+                  ▲
+                </span>
+              </div>
+              <div className="details-scroll">
               {draft.meta && (
                 <div className="cd-meta-row">
                   <span className="meta">{draft.meta}</span>
@@ -2438,76 +2464,6 @@ export default function Home() {
                 )}
               </div>
 
-              <div>
-                <div className="cd-section-label">
-                  <span>Commentaires</span>
-                  {allComments.length > 0 && <span className="count-pill">{allComments.length}</span>}
-                </div>
-                {topComments.length === 0 ? (
-                  <p className="attachment-empty">Aucun commentaire.</p>
-                ) : (
-                  <div className="comment-list">{topComments.map((c) => renderComment(c, 0))}</div>
-                )}
-                <div className="composer">
-                  <div className="composer-head">
-                    <div className="avatar" style={{ "--av": avatarColor(me?.username ?? "") } as React.CSSProperties}>
-                      {initials(me?.username ?? "?")}
-                    </div>
-                    <span className="c-author">{me?.username}</span>
-                  </div>
-                  <RichTextEditor
-                    key={newCommentKey}
-                    value={newCommentHtml}
-                    placeholder="Écrire un commentaire…"
-                    lang={draft.lang ?? "fr"}
-                    onSave={setNewCommentHtml}
-                    onChange={setNewCommentHtml}
-                  />
-                  {newCommentAttachments.length > 0 && (
-                    <div className="c-attachments">
-                      {newCommentAttachments.map((a) => (
-                        <span className="c-chip" key={a.id}>
-                          📎 {a.filename} <span className="sz">({formatSize(a.size)})</span>
-                          <button
-                            type="button"
-                            className="chip-remove"
-                            aria-label="Retirer la pièce jointe"
-                            onClick={() => removeNewCommentAttachment(a.id)}
-                          >
-                            &times;
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mini-actions">
-                    <button
-                      type="button"
-                      className="mini-attach"
-                      data-busy={newCommentUploadBusy}
-                      onClick={() => newCommentFileInputRef.current?.click()}
-                    >
-                      {newCommentUploadBusy ? "Envoi…" : "📎 Joindre un fichier"}
-                    </button>
-                    <span style={{ flex: 1 }} />
-                    <button type="button" className="btn-mini-cancel" onClick={resetNewCommentComposer}>
-                      Effacer
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-mini-save"
-                      disabled={!newCommentHtml.trim()}
-                      onClick={publishNewComment}
-                    >
-                      Publier
-                    </button>
-                  </div>
-                  {newCommentUploadError && <p className="cd-error">{newCommentUploadError}</p>}
-                </div>
-                <input ref={newCommentFileInputRef} type="file" hidden onChange={handleNewCommentFile} />
-                <input ref={composerFileInputRef} type="file" hidden onChange={handleComposerFile} />
-              </div>
-
               <div className="cd-save-bar">
                 <button type="button" className="btn-save" disabled={!dirty} onClick={saveCard}>
                   Enregistrer
@@ -2572,10 +2528,83 @@ export default function Home() {
               <button type="button" className="cd-delete" onClick={deleteCard}>
                 Supprimer la carte
               </button>
+              </div>
+            </div>
+
+            {/* ---- côté "chat" : commentaires en bulles, cascade intacte ---- */}
+            <div className="thread-heading">
+              <span>Commentaires</span>
+              {allComments.length > 0 && <span className="count-pill">{allComments.length}</span>}
+            </div>
+            <div className="thread">
+              {topComments.length === 0 ? (
+                <p className="thread-empty">Aucun commentaire.</p>
+              ) : (
+                topComments.map((c) => renderComment(c, 0))
+              )}
+            </div>
+
+            <div className="composer-bar-wrap">
+              <div className="composer-head">
+                <div className="avatar" style={{ "--av": avatarColor(me?.username ?? "") } as React.CSSProperties}>
+                  {initials(me?.username ?? "?")}
+                </div>
+                <span className="c-author">{me?.username}</span>
+              </div>
+              <RichTextEditor
+                key={newCommentKey}
+                value={newCommentHtml}
+                placeholder="Écrire un commentaire…"
+                lang={draft.lang ?? "fr"}
+                onSave={setNewCommentHtml}
+                onChange={setNewCommentHtml}
+              />
+              {newCommentAttachments.length > 0 && (
+                <div className="c-attachments">
+                  {newCommentAttachments.map((a) => (
+                    <span className="c-chip" key={a.id}>
+                      📎 {a.filename} <span className="sz">({formatSize(a.size)})</span>
+                      <button
+                        type="button"
+                        className="chip-remove"
+                        aria-label="Retirer la pièce jointe"
+                        onClick={() => removeNewCommentAttachment(a.id)}
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="mini-actions">
+                <button
+                  type="button"
+                  className="mini-attach"
+                  data-busy={newCommentUploadBusy}
+                  onClick={() => newCommentFileInputRef.current?.click()}
+                >
+                  {newCommentUploadBusy ? "Envoi…" : "📎 Joindre un fichier"}
+                </button>
+                <span style={{ flex: 1 }} />
+                <button type="button" className="btn-mini-cancel" onClick={resetNewCommentComposer}>
+                  Effacer
+                </button>
+                <button
+                  type="button"
+                  className="btn-mini-save"
+                  disabled={!newCommentHtml.trim()}
+                  onClick={publishNewComment}
+                >
+                  Publier
+                </button>
+              </div>
+              {newCommentUploadError && <p className="cd-error">{newCommentUploadError}</p>}
+              <input ref={newCommentFileInputRef} type="file" hidden onChange={handleNewCommentFile} />
+              <input ref={composerFileInputRef} type="file" hidden onChange={handleComposerFile} />
             </div>
           </>
-        )}
-      </dialog>
+        </div>
+      )}
 
       {/* ---- trash ---- */}
       <dialog ref={trashDialogRef} className="card-modal" onClose={() => setTrashOpen(false)}>
