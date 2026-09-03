@@ -7,7 +7,16 @@ import type { BoardData } from "@/lib/store";
 
 type ProjectOption = { id: string; name: string; archived: boolean };
 
+// Stored role values stay admin/manager/member (see src/lib/auth.ts); only
+// the label shown to people changed -- "member" reads as "Participant".
+function roleLabel(role: Role): string {
+  if (role === "admin") return "admin";
+  if (role === "manager") return "manager";
+  return "participant";
+}
+
 export default function UsersPage() {
+  const [me, setMe] = useState<{ userId: string } | null>(null);
   const [users, setUsers] = useState<PublicUser[] | null>(null);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [username, setUsername] = useState("");
@@ -16,9 +25,14 @@ export default function UsersPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [openPickerId, setOpenPickerId] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState("");
   const pickerRef = useRef<HTMLDivElement | null>(null);
 
   function load() {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setMe)
+      .catch(() => setMe(null));
     fetch("/api/users")
       .then((r) => r.json())
       .then(setUsers);
@@ -61,6 +75,20 @@ export default function UsersPage() {
     const current = u.projectIds ?? projects.map((p) => p.id); // unrestricted == everything checked
     const next = current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId];
     setUserProjects(u.id, next);
+  }
+
+  async function changeRole(id: string, newRole: Role) {
+    setRoleError("");
+    const res = await fetch(`/api/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: newRole }),
+    });
+    if (res.ok) load();
+    else {
+      const json = await res.json().catch(() => ({}));
+      setRoleError(json.error || "Échec du changement de rôle.");
+    }
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -134,7 +162,8 @@ export default function UsersPage() {
           <label className="field">
             <span>Rôle</span>
             <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-              <option value="member">Membre</option>
+              <option value="member">Participant</option>
+              <option value="manager">Manager</option>
               <option value="admin">Administrateur</option>
             </select>
           </label>
@@ -144,6 +173,8 @@ export default function UsersPage() {
           {error && <p className="cd-error">{error}</p>}
         </form>
 
+        {roleError && <p className="cd-error">{roleError}</p>}
+
         <div className="user-list">
           {users === null ? (
             <p>Chargement…</p>
@@ -151,12 +182,23 @@ export default function UsersPage() {
             users.map((u) => {
               const unrestricted = u.role === "admin" || u.projectIds === undefined;
               const restrictedIds = u.projectIds ?? [];
+              const isSelf = me?.userId === u.id;
               return (
                 <div className="user-row" key={u.id}>
                   <span className="user-name">{u.username}</span>
-                  <span className={`tag t-${u.role === "admin" ? "front" : "other"}`}>
-                    {u.role === "admin" ? "admin" : "membre"}
-                  </span>
+                  {isSelf ? (
+                    <span className={`tag t-${u.role === "admin" ? "front" : "other"}`}>{roleLabel(u.role)}</span>
+                  ) : (
+                    <select
+                      className="role-select"
+                      value={u.role}
+                      onChange={(e) => changeRole(u.id, e.target.value as Role)}
+                    >
+                      <option value="member">participant</option>
+                      <option value="manager">manager</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  )}
                   <div className="proj-chips">
                     {unrestricted ? (
                       <span className="proj-chip all">tous les projets</span>

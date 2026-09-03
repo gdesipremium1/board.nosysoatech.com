@@ -88,6 +88,10 @@ export type Project = {
   // Labels are scoped to a project: created on one card, reusable on every
   // other card in the same project, never shared across projects.
   labels: Label[];
+  // Small logo shown next to the project's name in the tab bar and on its
+  // own board header. Uploaded via /api/upload, same as avatars and
+  // attachments -- undefined just shows the name with no icon.
+  logoUrl?: string;
 };
 
 export type BoardData = {

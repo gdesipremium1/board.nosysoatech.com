@@ -32,6 +32,14 @@ function initials(username: string): string {
   return username.slice(0, 2).toUpperCase();
 }
 
+// Stored role values stay admin/manager/member (see src/lib/auth.ts); only
+// the label shown to people changed -- "member" reads as "participant".
+function roleLabel(role: "admin" | "manager" | "member"): string {
+  if (role === "admin") return "admin";
+  if (role === "manager") return "manager";
+  return "participant";
+}
+
 // Deterministic so the same person always gets the same avatar color,
 // without needing to store one.
 function avatarColor(username: string): string {
@@ -207,7 +215,16 @@ type DropTarget = {
 } | null;
 
 type Selected = { projectId: string; colId: string; cardId: string };
-type Me = { username: string; role: "admin" | "member"; avatarUrl?: string };
+type Me = { username: string; role: "admin" | "manager" | "member"; avatarUrl?: string };
+
+// Just enough of PublicUser (src/lib/auth.ts) for the participants panel --
+// fetched from GET /api/users, readable by admin and manager alike.
+type PublicUserLite = {
+  id: string;
+  username: string;
+  role: "admin" | "manager" | "member";
+  projectIds?: string[];
+};
 
 // The one composer shared by "editing an existing comment" and "replying to
 // one" -- the two are mutually exclusive (starting one cancels the other),
@@ -268,9 +285,25 @@ export default function Home() {
   const [espaceOpen, setEspaceOpen] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState("");
+  const [collapsedCommentIds, setCollapsedCommentIds] = useState<Set<string>>(new Set());
+  const [projectLogoBusy, setProjectLogoBusy] = useState(false);
+  const [projectLogoError, setProjectLogoError] = useState("");
+  const [participantsOpen, setParticipantsOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState<PublicUserLite[] | null>(null);
+  const [participantsBusyId, setParticipantsBusyId] = useState<string | null>(null);
+  const [participantsError, setParticipantsError] = useState("");
+  const [profileEditing, setProfileEditing] = useState(false);
+  const [profileUsername, setProfileUsername] = useState("");
+  const [profileCurrentPassword, setProfileCurrentPassword] = useState("");
+  const [profileNewPassword, setProfileNewPassword] = useState("");
+  const [profileConfirmPassword, setProfileConfirmPassword] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState("");
   const moveMenuRef = useRef<HTMLDivElement | null>(null);
   const espaceRef = useRef<HTMLDivElement | null>(null);
   const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
+  const projectLogoFileInputRef = useRef<HTMLInputElement | null>(null);
+  const participantsRef = useRef<HTMLDivElement | null>(null);
 
   const dragData = useRef<{ cardId: string; fromColId: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -344,6 +377,30 @@ export default function Home() {
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [espaceOpen]);
+
+  // However it closes (outside click, toggling it shut), don't leave the
+  // profile form silently open for next time.
+  useEffect(() => {
+    if (!espaceOpen) setProfileEditing(false);
+  }, [espaceOpen]);
+
+  // Same pattern for the participants panel, plus a lazy fetch of the user
+  // list the first time it's opened (admin/manager only, see GET
+  // /api/users).
+  useEffect(() => {
+    if (!participantsOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!participantsRef.current?.contains(e.target as Node)) setParticipantsOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    if (allUsers === null) {
+      fetch("/api/users")
+        .then((r) => (r.ok ? r.json() : []))
+        .then(setAllUsers)
+        .catch(() => setAllUsers([]));
+    }
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [participantsOpen, allUsers]);
 
   // Clicking "Répondre" jumps straight to the reply field, like an HTML
   // anchor -- no manual scrolling to find it, especially useful once the
@@ -419,6 +476,36 @@ export default function Home() {
     }
   }
 
+  // Same upload endpoint as avatars/attachments. Only shown to admin/manager
+  // (see canManage) -- the server independently reverts any logo change
+  // from anyone else, this is just what lets the button show at all.
+  async function handleProjectLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !activeProjectId) return;
+    if (!file.type.startsWith("image/")) {
+      setProjectLogoError("Choisis une image.");
+      return;
+    }
+    setProjectLogoError("");
+    setProjectLogoBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Échec de l'envoi.");
+      updateBoard((b) => {
+        const project = b.projects.find((p) => p.id === activeProjectId);
+        if (project) project.logoUrl = json.url;
+      });
+    } catch (err) {
+      setProjectLogoError(err instanceof Error ? err.message : "Échec de l'envoi.");
+    } finally {
+      setProjectLogoBusy(false);
+    }
+  }
+
   async function removeAvatar() {
     setAvatarError("");
     setAvatarBusy(true);
@@ -437,9 +524,67 @@ export default function Home() {
     }
   }
 
+  function startEditProfile() {
+    setProfileUsername(me?.username ?? "");
+    setProfileCurrentPassword("");
+    setProfileNewPassword("");
+    setProfileConfirmPassword("");
+    setProfileError("");
+    setProfileEditing(true);
+  }
+
+  // Self-service: everyone can rename themselves and/or change their
+  // password (never their role, that's admin-only via /users). Password
+  // changes are only sent if a new one was actually typed, and the two
+  // "new password" fields must match before this even calls the API.
+  async function submitProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setProfileError("");
+    const changingPassword = profileNewPassword.trim().length > 0;
+    if (changingPassword && profileNewPassword !== profileConfirmPassword) {
+      setProfileError("Les deux mots de passe ne correspondent pas.");
+      return;
+    }
+    if (changingPassword && !profileCurrentPassword) {
+      setProfileError("Ton mot de passe actuel est requis pour le changer.");
+      return;
+    }
+    const body: { username?: string; newPassword?: string; currentPassword?: string } = {};
+    if (profileUsername.trim() && profileUsername.trim() !== me?.username) body.username = profileUsername.trim();
+    if (changingPassword) {
+      body.newPassword = profileNewPassword;
+      body.currentPassword = profileCurrentPassword;
+    }
+    if (!body.username && !body.newPassword) {
+      setProfileEditing(false);
+      return;
+    }
+    setProfileBusy(true);
+    try {
+      const res = await fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Échec de la mise à jour du profil.");
+      setMe((prev) => (prev ? { ...prev, username: json.username } : prev));
+      setProfileEditing(false);
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "Échec de la mise à jour du profil.");
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
   const visibleProjects = board?.projects.filter((p) => !p.archived) ?? [];
   const archivedProjects = board?.projects.filter((p) => p.archived) ?? [];
   const activeProject = visibleProjects.find((p) => p.id === activeProjectId);
+  // Mirrors canManage() server-side (src/app/api/board/route.ts): admin and
+  // manager can archive projects, moderate any comment, and add
+  // participants. This is only a UI convenience -- the server enforces it
+  // regardless of what the client sends.
+  const canManage = me?.role === "admin" || me?.role === "manager";
 
   function addProject() {
     const name = window.prompt("Nom du nouveau projet :");
@@ -476,6 +621,82 @@ export default function Home() {
       const next = visibleProjects.find((p) => p.id !== projectId);
       setActiveProjectId(next?.id ?? "");
     }
+  }
+
+  // A user can see this project if they're admin, unrestricted (projectIds
+  // undefined -- the default), or this project id is explicitly on their
+  // list. Mirrors visibleProjectIds in src/app/api/board/route.ts.
+  function hasProjectAccess(u: PublicUserLite, projectId: string): boolean {
+    return u.role === "admin" || u.projectIds === undefined || u.projectIds.includes(projectId);
+  }
+
+  function grantParticipant(userId: string) {
+    if (!activeProjectId) return;
+    setParticipantsError("");
+    setParticipantsBusyId(userId);
+    fetch(`/api/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ grantProjectId: activeProjectId }),
+    })
+      .then(async (res) => {
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Échec de l'ajout.");
+        setAllUsers((prev) => prev?.map((u) => (u.id === userId ? json : u)) ?? prev);
+      })
+      .catch((err) => setParticipantsError(err instanceof Error ? err.message : "Échec de l'ajout."))
+      .finally(() => setParticipantsBusyId(null));
+  }
+
+  // Who already sees this project ("Ont déjà accès", read-only here -- only
+  // admin can revoke, from the full picker on /users) vs who a manager or
+  // admin can grant it to with one click ("Ajouter").
+  function renderParticipantsPanel() {
+    if (!activeProjectId) return null;
+    const users = allUsers ?? [];
+    const withAccess = users.filter((u) => hasProjectAccess(u, activeProjectId));
+    const candidates = users.filter((u) => !hasProjectAccess(u, activeProjectId));
+    return (
+      <div className="participants-panel">
+        <div className="participants-panel-head">Ont déjà accès</div>
+        {allUsers === null ? (
+          <p className="participants-empty">Chargement…</p>
+        ) : withAccess.length === 0 ? (
+          <p className="participants-empty">Personne pour l'instant.</p>
+        ) : (
+          <div className="participants-list">
+            {withAccess.map((u) => (
+              <span className="participant-row" key={u.id}>
+                {u.username}
+                {u.role !== "member" && (
+                  <span className="participant-role">{u.role === "admin" ? "admin" : "manager"}</span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+        {candidates.length > 0 && (
+          <>
+            <div className="participants-panel-head participants-panel-add">Ajouter</div>
+            <div className="participants-list">
+              {candidates.map((u) => (
+                <button
+                  type="button"
+                  className="participant-add-row"
+                  key={u.id}
+                  disabled={participantsBusyId === u.id}
+                  onClick={() => grantParticipant(u.id)}
+                >
+                  <span>{u.username}</span>
+                  <span className="participant-add-icon">{participantsBusyId === u.id ? "…" : "+"}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {participantsError && <p className="cd-error">{participantsError}</p>}
+      </div>
+    );
   }
 
   function restoreProject(projectId: string) {
@@ -665,6 +886,7 @@ export default function Home() {
     setMoveMenuColId(colId);
     setLangSwitching(false);
     setLangError("");
+    setCollapsedCommentIds(new Set());
     setSelected({ projectId: activeProjectId, colId, cardId: card.id });
     setDraft(cloneCard(card));
     setDirty(false);
@@ -1168,6 +1390,70 @@ export default function Home() {
     return allComments.filter((c) => c.parentId === commentId);
   }
 
+  // A comment plus every reply nested under it, any depth -- same
+  // fixed-point walk as collectSubtreeIds uses for cards.
+  function collectCommentSubtreeIds(rootId: string): Set<string> {
+    const result = new Set<string>([rootId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const c of allComments) {
+        if (c.parentId && result.has(c.parentId) && !result.has(c.id)) {
+          result.add(c.id);
+          changed = true;
+        }
+      }
+    }
+    return result;
+  }
+
+  function subtreeReplyCount(commentId: string): number {
+    return collectCommentSubtreeIds(commentId).size - 1;
+  }
+
+  // True if some ancestor of this comment was manually collapsed via its
+  // own +/- toggle -- distinct from replyFocusDepth's temporary hide while
+  // composing a reply (see renderComment).
+  function hasCollapsedAncestor(commentId: string): boolean {
+    let current = allComments.find((c) => c.id === commentId);
+    while (current?.parentId) {
+      if (collapsedCommentIds.has(current.parentId)) return true;
+      current = allComments.find((c) => c.id === current!.parentId);
+    }
+    return false;
+  }
+
+  function toggleCommentCollapsed(commentId: string) {
+    setCollapsedCommentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(commentId)) next.delete(commentId);
+      else next.add(commentId);
+      return next;
+    });
+  }
+
+  // Deleting always takes the whole reply subtree with it (see the
+  // conversation this shipped from) -- authorized if you wrote the comment,
+  // or if you can moderate this project (canManage). The server re-checks
+  // this independently; this is just what lets the button show at all.
+  function deleteComment(commentId: string) {
+    if (!selected) return;
+    const idsToDelete = collectCommentSubtreeIds(commentId);
+    const label =
+      idsToDelete.size > 1
+        ? "Supprimer ce commentaire ? Ses réponses seront supprimées aussi."
+        : "Supprimer ce commentaire ?";
+    if (!window.confirm(label)) return;
+    updateBoard((b) => {
+      const project = b.projects.find((p) => p.id === selected.projectId);
+      const col = project?.columns.find((c) => c.id === selected.colId);
+      const card = col?.cards.find((c) => c.id === selected.cardId);
+      if (!card) return;
+      card.comments = card.comments.filter((c) => !idsToDelete.has(c.id));
+    });
+    if (composer && idsToDelete.has(composer.targetId)) setComposer(null);
+  }
+
   function renderComposerBox(saveLabel: string) {
     if (!composer) return null;
     return (
@@ -1178,6 +1464,7 @@ export default function Home() {
           placeholder={composer.mode === "reply" ? "Répondre…" : "Modifier le commentaire…"}
           lang={liveCard?.lang ?? "fr"}
           onSave={(html) => setComposer((prev) => (prev ? { ...prev, html } : prev))}
+          onChange={(html) => setComposer((prev) => (prev ? { ...prev, html } : prev))}
         />
         {composer.attachments.length > 0 && (
           <div className="c-attachments">
@@ -1220,16 +1507,31 @@ export default function Home() {
 
   function renderComment(c: Comment, depth: number): React.ReactNode {
     const mine = me?.username === c.authorUsername;
+    const canDelete = mine || canManage;
     const isEditingThis = composer?.mode === "edit" && composer.targetId === c.id;
     const isReplyingHere = composer?.mode === "reply" && composer.targetId === c.id;
     const replies = repliesOf(c.id);
-    const collapsed = replyFocusDepth !== null && depth > replyFocusDepth;
+    const focusHidden = replyFocusDepth !== null && depth > replyFocusDepth;
+    const manuallyHidden = hasCollapsedAncestor(c.id);
+    const isCollapsedByUser = collapsedCommentIds.has(c.id);
     return (
-      <div className={"comment" + (collapsed ? " collapsed" : "")} key={c.id}>
+      <div
+        className={"comment" + (focusHidden || manuallyHidden ? " collapsed" : "")}
+        style={{ "--av": avatarColor(c.authorUsername) } as React.CSSProperties}
+        key={c.id}
+      >
         <div className="comment-head">
-          <div className="avatar" style={{ "--av": avatarColor(c.authorUsername) } as React.CSSProperties}>
-            {initials(c.authorUsername)}
-          </div>
+          {replies.length > 0 && (
+            <button
+              type="button"
+              className="comment-collapse-btn"
+              title={isCollapsedByUser ? "Déplier les réponses" : "Réduire les réponses"}
+              onClick={() => toggleCommentCollapsed(c.id)}
+            >
+              {isCollapsedByUser ? "+" : "−"}
+            </button>
+          )}
+          <div className="avatar">{initials(c.authorUsername)}</div>
           <span className="c-author">{c.authorUsername}</span>
           {mine && <span className="c-you">toi</span>}
           <span className="c-date">{formatCommentDate(c.createdAt)}</span>
@@ -1250,6 +1552,12 @@ export default function Home() {
                 ))}
               </div>
             )}
+            {isCollapsedByUser && replies.length > 0 && (
+              <p className="mask-note">
+                {subtreeReplyCount(c.id)} réponse{subtreeReplyCount(c.id) > 1 ? "s" : ""} repliée
+                {subtreeReplyCount(c.id) > 1 ? "s" : ""}
+              </p>
+            )}
             <div className="c-actions">
               <button
                 type="button"
@@ -1261,6 +1569,15 @@ export default function Home() {
               {mine && (
                 <button type="button" className="c-action-btn" onClick={() => startEditComment(c)}>
                   ✏️ Modifier
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  className="c-action-btn c-action-danger"
+                  onClick={() => deleteComment(c.id)}
+                >
+                  🗑 Supprimer
                 </button>
               )}
             </div>
@@ -1398,9 +1715,21 @@ export default function Home() {
                 className={"tab" + (p.id === activeProjectId ? " active" : "")}
                 onClick={() => setActiveProjectId(p.id)}
               >
+                {p.logoUrl && <img src={p.logoUrl} alt="" className="tab-logo" />}
                 {p.name}
               </button>
-              {p.id === activeProjectId && (
+              {p.id === activeProjectId && canManage && (
+                <button
+                  type="button"
+                  className="tab-logo-edit"
+                  disabled={projectLogoBusy}
+                  title={p.logoUrl ? "Changer le logo du projet" : "Ajouter un logo au projet"}
+                  onClick={() => projectLogoFileInputRef.current?.click()}
+                >
+                  {projectLogoBusy ? "…" : "🖼"}
+                </button>
+              )}
+              {p.id === activeProjectId && canManage && (
                 <button
                   type="button"
                   className="tab-trash"
@@ -1415,10 +1744,30 @@ export default function Home() {
           <button type="button" className="tab-add" onClick={addProject}>
             + projet
           </button>
+          <input
+            ref={projectLogoFileInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleProjectLogoFile}
+          />
         </div>
+        {canManage && activeProject && (
+          <div className="participants-wrap" ref={participantsRef}>
+            <button
+              type="button"
+              className="trash-open"
+              onClick={() => setParticipantsOpen((v) => !v)}
+            >
+              👥 Participants
+            </button>
+            {participantsOpen && renderParticipantsPanel()}
+          </div>
+        )}
         <button type="button" className="trash-open" onClick={() => setTrashOpen(true)}>
           🗑 Corbeille {archivedProjects.length > 0 ? `(${archivedProjects.length})` : ""}
         </button>
+        {projectLogoError && <span className="cd-error">{projectLogoError}</span>}
         {me && (
           <div className="user-badge">
             <div className="espace-wrap" ref={espaceRef}>
@@ -1451,7 +1800,7 @@ export default function Home() {
                     </span>
                   </button>
                   <div className="espace-panel-name">{me.username}</div>
-                  <div className="espace-panel-role">{me.role === "admin" ? "admin" : "membre"}</div>
+                  <div className="espace-panel-role">{roleLabel(me.role)}</div>
                   <div className="espace-panel-actions">
                     <button
                       type="button"
@@ -1475,6 +1824,62 @@ export default function Home() {
                     hidden
                     onChange={handleAvatarFile}
                   />
+
+                  <div className="espace-sep" />
+
+                  {profileEditing ? (
+                    <form className="profile-form" onSubmit={submitProfile}>
+                      <label className="field">
+                        <span>Identifiant</span>
+                        <input value={profileUsername} onChange={(e) => setProfileUsername(e.target.value)} />
+                      </label>
+                      <label className="field">
+                        <span>Mot de passe actuel</span>
+                        <input
+                          type="password"
+                          value={profileCurrentPassword}
+                          onChange={(e) => setProfileCurrentPassword(e.target.value)}
+                          placeholder="pour changer le mot de passe"
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Nouveau mot de passe</span>
+                        <input
+                          type="password"
+                          value={profileNewPassword}
+                          onChange={(e) => setProfileNewPassword(e.target.value)}
+                          minLength={8}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Confirmer</span>
+                        <input
+                          type="password"
+                          value={profileConfirmPassword}
+                          onChange={(e) => setProfileConfirmPassword(e.target.value)}
+                          minLength={8}
+                        />
+                      </label>
+                      <div className="espace-panel-actions">
+                        <button
+                          type="button"
+                          className="tab"
+                          disabled={profileBusy}
+                          onClick={() => setProfileEditing(false)}
+                        >
+                          Annuler
+                        </button>
+                        <button type="submit" className="tab" disabled={profileBusy}>
+                          {profileBusy ? "…" : "Enregistrer"}
+                        </button>
+                      </div>
+                      {profileError && <p className="cd-error">{profileError}</p>}
+                    </form>
+                  ) : (
+                    <button type="button" className="tab" onClick={startEditProfile}>
+                      ✏️ Modifier le profil
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1491,6 +1896,13 @@ export default function Home() {
         )}
         {saveError && <span className="cd-error">{saveError}</span>}
       </header>
+
+      {activeProject && (
+        <div className="project-banner">
+          {activeProject.logoUrl && <img src={activeProject.logoUrl} alt="" className="project-banner-logo" />}
+          <span className="project-banner-name">{activeProject.name}</span>
+        </div>
+      )}
 
       <div className="board">
         {activeProject?.columns.map((col: Column) => (
@@ -1595,6 +2007,10 @@ export default function Home() {
                           updateDraft((c) => {
                             c.title = html;
                           });
+                        }}
+                        onChange={() => {
+                          setDirty(true);
+                          setSavedFlash(false);
                         }}
                         onEnterKey={() => setTitleEditing(false)}
                       />
@@ -1888,6 +2304,10 @@ export default function Home() {
                         c.description = html;
                       });
                     }}
+                    onChange={() => {
+                      setDirty(true);
+                      setSavedFlash(false);
+                    }}
                   />
                 ) : (
                   <ClampBlock
@@ -1943,6 +2363,10 @@ export default function Home() {
                               placeholder="Petite note sur cette image…"
                               lang={draft.lang ?? "fr"}
                               onSave={(html) => updateAttachmentNote(a.id, html)}
+                              onChange={() => {
+                                setDirty(true);
+                                setSavedFlash(false);
+                              }}
                             />
                           ) : (
                             <ClampBlock
@@ -2037,6 +2461,7 @@ export default function Home() {
                     placeholder="Écrire un commentaire…"
                     lang={draft.lang ?? "fr"}
                     onSave={setNewCommentHtml}
+                    onChange={setNewCommentHtml}
                   />
                   {newCommentAttachments.length > 0 && (
                     <div className="c-attachments">

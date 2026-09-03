@@ -161,12 +161,128 @@ header {
   border: none;
   background: none;
 }
+.tab-logo {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  object-fit: cover;
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+.tab-logo-edit {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 6px 0 0;
+}
+.tab-logo-edit:hover {
+  color: var(--blue);
+}
+.project-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px 0;
+}
+.project-banner-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+.project-banner-name {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+.participants-wrap {
+  position: relative;
+}
+.participants-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 240px;
+  max-height: min(360px, 70vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+}
+.participants-panel-head {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.participants-panel-add {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.participants-empty {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  margin: 0;
+}
+.participants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.participant-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  padding: 4px 2px;
+}
+.participant-role {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--blue);
+  border: 1px solid color-mix(in srgb, var(--blue) 45%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.participant-add-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 13px;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 4px;
+  cursor: pointer;
+}
+.participant-add-row:hover {
+  background: var(--paper);
+}
+.participant-add-icon {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--blue);
+  font-weight: 600;
+}
 .tab-trash {
   background: none;
   border: none;
   color: var(--ink-faint);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 15px;
   padding: 0 8px 0 0;
 }
 .tab-trash:hover {
@@ -174,8 +290,8 @@ header {
 }
 .trash-open {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12px;
-  color: var(--ink-faint);
+  font-size: 13px;
+  color: var(--ink-soft);
   background: none;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -231,7 +347,7 @@ header {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 14px;
-  width: 200px;
+  width: 240px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -300,6 +416,19 @@ header {
   flex-wrap: wrap;
   justify-content: center;
   margin-top: 4px;
+}
+.espace-sep {
+  width: 100%;
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
+}
+.profile-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
 }
 .restore-btn {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -561,7 +690,7 @@ dialog.card-modal {
   border-radius: 5px;
   background: var(--card);
   color: var(--ink);
-  width: min(680px, calc(100vw - 48px));
+  width: min(880px, calc(100vw - 48px));
   max-height: 85vh;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
   display: flex;
@@ -1072,9 +1201,9 @@ dialog.card-modal::backdrop {
 .attachment-item .remove {
   background: none;
   border: none;
-  color: var(--ink-faint);
+  color: color-mix(in srgb, var(--danger) 55%, var(--ink-faint));
   cursor: pointer;
-  font-size: 15px;
+  font-size: 19px;
   line-height: 1;
   padding: 0 2px;
 }
@@ -1153,6 +1282,14 @@ dialog.card-modal::backdrop {
 .comment {
   display: flex;
   flex-direction: column;
+  /* --av is set on this element (see page.tsx) so the same per-author
+     color drives both the avatar fill and this accent/name -- one color
+     per person across the whole thread, not just on their avatar dot. */
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--av, var(--ink-faint));
+  border-radius: 6px;
+  padding: 10px 12px 10px 10px;
 }
 /* While replying to one comment, everything nested deeper than it is
    temporarily hidden to cut clutter -- comments at the same depth (its own
@@ -1200,7 +1337,7 @@ dialog.card-modal::backdrop {
 .c-author {
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--ink);
+  color: var(--av, var(--ink));
 }
 .c-you {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -1299,6 +1436,30 @@ dialog.card-modal::backdrop {
 }
 .c-action-btn:hover {
   color: var(--blue);
+}
+.c-action-danger:hover {
+  color: var(--danger);
+}
+.comment-collapse-btn {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--card);
+  color: var(--ink-soft);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.comment-collapse-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
 }
 .c-replies {
   margin-left: 30px;
@@ -1854,9 +2015,9 @@ dialog.card-modal::backdrop {
 .attachment-image-meta .remove {
   background: none;
   border: none;
-  color: var(--ink-faint);
+  color: color-mix(in srgb, var(--danger) 55%, var(--ink-faint));
   cursor: pointer;
-  font-size: 15px;
+  font-size: 19px;
   line-height: 1;
 }
 .attachment-image-meta .remove:hover {
@@ -2027,15 +2188,25 @@ dialog.lightbox::backdrop {
 .user-row .user-name {
   font-weight: 600;
 }
+.role-select {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
 .user-row .meta {
   margin-left: auto;
 }
 .user-row .remove {
   background: none;
   border: none;
-  color: var(--ink-faint);
+  color: color-mix(in srgb, var(--danger) 55%, var(--ink-faint));
   cursor: pointer;
-  font-size: 16px;
+  font-size: 19px;
 }
 .user-row .remove:hover {
   color: var(--danger);

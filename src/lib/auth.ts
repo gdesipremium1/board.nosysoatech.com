@@ -2,7 +2,13 @@ import crypto from "crypto";
 import path from "path";
 import { readJson, writeJson } from "./jsonFile";
 
-export type Role = "admin" | "member";
+// Stored value stays "member" for backward compatibility with existing
+// users.json data (no migration needed) -- the UI labels it "Participant".
+// Capability tiers: admin (everything, always) > manager (can archive
+// projects, moderate/delete any comment, and add participants -- all
+// scoped to the projects they themselves can access) > member/"Participant"
+// (create cards, comment, reply, delete their own comments).
+export type Role = "admin" | "manager" | "member";
 
 export type User = {
   id: string;
@@ -186,6 +192,52 @@ export async function updateUserAvatar(id: string, avatarUrl: string | undefined
   const user = users.find((u) => u.id === id);
   if (!user) throw new Error("Utilisateur introuvable.");
   user.avatarUrl = avatarUrl;
+  await saveUsers(users);
+  return stripHash(user);
+}
+
+// Admin-only, same as creating/deleting a user -- promoting/demoting is not
+// something a manager can do to themselves or anyone else.
+export async function updateUserRole(id: string, role: Role): Promise<PublicUser> {
+  const users = await readUsers();
+  const user = users.find((u) => u.id === id);
+  if (!user) throw new Error("Utilisateur introuvable.");
+  user.role = role;
+  await saveUsers(users);
+  return stripHash(user);
+}
+
+// Self-service: username and/or password, never role. Changing the
+// password requires the current one, same as any normal account-settings
+// flow -- otherwise a hijacked session could lock the real owner out by
+// swapping the password to something only the attacker knows.
+export async function updateOwnProfile(
+  userId: string,
+  changes: { username?: string; newPassword?: string; currentPassword?: string }
+): Promise<PublicUser> {
+  const users = await readUsers();
+  const user = users.find((u) => u.id === userId);
+  if (!user) throw new Error("Utilisateur introuvable.");
+
+  if (changes.username !== undefined) {
+    const clean = changes.username.trim();
+    if (!clean) throw new Error("Identifiant requis.");
+    if (users.some((u) => u.id !== userId && u.username.toLowerCase() === clean.toLowerCase())) {
+      throw new Error("Ce nom d'utilisateur existe déjà.");
+    }
+    user.username = clean;
+  }
+
+  if (changes.newPassword !== undefined) {
+    if (!changes.currentPassword || !verifyPassword(changes.currentPassword, user.passwordHash)) {
+      throw new Error("Mot de passe actuel incorrect.");
+    }
+    if (changes.newPassword.length < 8) {
+      throw new Error("Mot de passe trop court (8 caractères minimum).");
+    }
+    user.passwordHash = hashPassword(changes.newPassword);
+  }
+
   await saveUsers(users);
   return stripHash(user);
 }

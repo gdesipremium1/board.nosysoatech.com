@@ -26,7 +26,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if ((pathname === "/users" || pathname.startsWith("/api/users")) && session.role !== "admin") {
+  // The full user-management page (create/delete accounts, change roles)
+  // stays admin-only. The /api/users endpoints underneath it are not
+  // gated here anymore -- a manager also needs read access (to list
+  // candidates) and a narrow write (granting a project to someone) for the
+  // per-project "participants" panel on the board itself; each route
+  // handler enforces its own, more specific rule per HTTP verb.
+  if (pathname === "/users" && session.role !== "admin") {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

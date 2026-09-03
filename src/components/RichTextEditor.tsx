@@ -18,6 +18,12 @@ type Props = {
   // break -- it's meant to stay one line, just with bold/color available.
   minimal?: boolean;
   onEnterKey?: () => void;
+  // Fires on every keystroke (Tiptap's onUpdate) with the current HTML,
+  // unlike onSave which only commits on blur -- lets the parent enable a
+  // save/publish button (or flag unsaved changes) immediately instead of
+  // waiting for the field to lose focus. Callers that only need a "the
+  // user typed something" signal can ignore the argument.
+  onChange?: (html: string) => void;
   // Sets the `lang` attribute on the editable DOM node, which is what the
   // browser's own spellchecker uses to pick a dictionary -- without it,
   // it just guesses from the browser's UI language and flags perfectly
@@ -36,6 +42,7 @@ export default function RichTextEditor({
   placeholder = "Description de la carte…",
   minimal = false,
   onEnterKey,
+  onChange,
   lang = "fr",
 }: Props) {
   const editor = useEditor({
@@ -59,6 +66,7 @@ export default function RichTextEditor({
     content: value || "",
     immediatelyRender: false,
     onBlur: ({ editor }) => onSave(editor.getHTML()),
+    onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
     ...(minimal
       ? {
           editorProps: {

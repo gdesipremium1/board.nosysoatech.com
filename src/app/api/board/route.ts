@@ -14,6 +14,14 @@ function visibleProjectIds(session: Session | null, data: BoardData): Set<string
   return new Set(session.projectIds);
 }
 
+// Manager-and-up powers (archiving a project, moderating -- deleting --
+// anyone's comment): both already implicitly scoped to "projects this
+// session can see" by the reconciliation in PUT below, so this check alone
+// is enough once that's happened.
+function canManage(session: Session | null): boolean {
+  return !!session && (session.role === "admin" || session.role === "manager");
+}
+
 export async function GET(request: NextRequest) {
   const token = request.cookies.get("board_session")?.value;
   const session = await getSession(token);
@@ -34,8 +42,14 @@ function allCards(data: BoardData): Card[] {
 // always stamped from the session (never taken from the client), and an
 // edit to an existing comment's content is only kept if the session user
 // matches who originally wrote it -- otherwise that one field is quietly
-// reverted rather than failing the whole save.
-function sanitizeComments(card: Card, oldCard: Card | undefined, sessionUsername: string | undefined): void {
+// reverted rather than failing the whole save. Deletion follows the same
+// posture -- see the pass at the end of this function.
+function sanitizeComments(
+  card: Card,
+  oldCard: Card | undefined,
+  sessionUsername: string | undefined,
+  canModerate: boolean
+): void {
   if (!Array.isArray(card.comments)) {
     card.comments = [];
     return;
@@ -114,6 +128,41 @@ function sanitizeComments(card: Card, oldCard: Card | undefined, sessionUsername
   }
 
   card.comments = card.comments.filter((c) => validIds.has(c.id));
+
+  // A comment missing from the payload that was present before is a
+  // deletion. It's authorized if it's the session's own comment, or the
+  // session can moderate this project -- and once authorized, its whole
+  // reply subtree goes with it even if some of those replies belong to
+  // other people (deleting a comment always takes its descendants along;
+  // the UI computes that subtree client-side before sending this payload).
+  // Anything missing without that authorization is restored rather than
+  // silently lost -- iterated to a fixed point so a comment "collaterally"
+  // missing because its authorized parent was deleted doesn't get
+  // force-restored just because it isn't itself the session's own.
+  const oldComments = oldCard?.comments ?? [];
+  if (oldComments.length > 0) {
+    const oldById = new Map(oldComments.map((c) => [c.id, c]));
+    const stillPresent = new Set(card.comments.map((c) => c.id));
+    const missingIds = oldComments.map((c) => c.id).filter((id) => !stillPresent.has(id));
+    const authorizedGone = new Set<string>();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const id of missingIds) {
+        if (authorizedGone.has(id)) continue;
+        const old = oldById.get(id)!;
+        const selfAuthorized = canModerate || old.authorUsername === sessionUsername;
+        const parentAuthorized = !!old.parentId && authorizedGone.has(old.parentId);
+        if (selfAuthorized || parentAuthorized) {
+          authorizedGone.add(id);
+          changed = true;
+        }
+      }
+    }
+    for (const id of missingIds) {
+      if (!authorizedGone.has(id)) card.comments.push(oldById.get(id)!);
+    }
+  }
 }
 
 // The description editor's toolbar only offers a safe subset of HTML, but
@@ -121,13 +170,29 @@ function sanitizeComments(card: Card, oldCard: Card | undefined, sessionUsername
 // raw JSON, so anyone with a session could POST arbitrary HTML directly.
 // Every card description (and comment) is re-sanitized here, server-side,
 // on every save.
-function sanitizeBoard(data: BoardData, oldData: BoardData, sessionUsername: string | undefined): void {
+function sanitizeBoard(data: BoardData, oldData: BoardData, session: Session | null): void {
   const oldCardsById = new Map(allCards(oldData).map((c) => [c.id, c]));
+  const oldProjectsById = new Map(oldData.projects.map((p) => [p.id, p]));
+  const sessionUsername = session?.username;
+  const manage = canManage(session);
   for (const project of data.projects) {
     if (!Array.isArray(project.labels)) project.labels = [];
     for (const label of project.labels) {
       label.name = String(label.name ?? "").trim().slice(0, 24);
       label.color = sanitizeColor(label.color) ?? "#565f56";
+    }
+    // Only an admin or a manager can archive/restore a project or change
+    // its logo -- a plain member can still edit everything inside it
+    // (cards, labels, comments), just not close it down or rebrand it.
+    // A brand-new project (no old counterpart) is exempt: creating one is
+    // still open to everyone, same as before this role existed.
+    const oldProject = oldProjectsById.get(project.id);
+    if (oldProject && !manage) {
+      project.archived = oldProject.archived;
+      project.archivedAt = oldProject.archivedAt;
+      project.logoUrl = oldProject.logoUrl;
+    } else if (typeof project.logoUrl === "string" && !project.logoUrl.startsWith("/uploads/")) {
+      project.logoUrl = oldProject?.logoUrl;
     }
     for (const column of project.columns) {
       for (const card of column.cards) {
@@ -182,7 +247,7 @@ function sanitizeBoard(data: BoardData, oldData: BoardData, sessionUsername: str
         } else {
           card.translations = undefined;
         }
-        sanitizeComments(card, oldCard, sessionUsername);
+        sanitizeComments(card, oldCard, sessionUsername, manage);
       }
     }
   }
@@ -225,7 +290,7 @@ export async function PUT(request: NextRequest) {
     body.projects = merged;
   }
 
-  sanitizeBoard(body, oldData, session?.username);
+  sanitizeBoard(body, oldData, session);
   await saveBoard(body);
   if (grantNewProjectId && session) {
     await updateUserProjects(session.userId, [...(session.projectIds ?? []), grantNewProjectId]);
