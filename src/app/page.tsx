@@ -207,7 +207,7 @@ type DropTarget = {
 } | null;
 
 type Selected = { projectId: string; colId: string; cardId: string };
-type Me = { username: string; role: "admin" | "member" };
+type Me = { username: string; role: "admin" | "member"; avatarUrl?: string };
 
 // The one composer shared by "editing an existing comment" and "replying to
 // one" -- the two are mutually exclusive (starting one cancels the other),
@@ -265,7 +265,12 @@ export default function Home() {
   const [moveMenuColId, setMoveMenuColId] = useState<string>("");
   const [langSwitching, setLangSwitching] = useState(false);
   const [langError, setLangError] = useState("");
+  const [espaceOpen, setEspaceOpen] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
   const moveMenuRef = useRef<HTMLDivElement | null>(null);
+  const espaceRef = useRef<HTMLDivElement | null>(null);
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const dragData = useRef<{ cardId: string; fromColId: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -330,6 +335,24 @@ export default function Home() {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [moveMenuOpen]);
 
+  // Same pattern for "Mon espace".
+  useEffect(() => {
+    if (!espaceOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!espaceRef.current?.contains(e.target as Node)) setEspaceOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [espaceOpen]);
+
+  // Clicking "Répondre" jumps straight to the reply field, like an HTML
+  // anchor -- no manual scrolling to find it, especially useful once the
+  // deeper replies around it have collapsed out of view.
+  useEffect(() => {
+    if (composer?.mode !== "reply") return;
+    document.getElementById("reply-composer-box")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [composer?.mode, composer?.targetId]);
+
   function closeLightbox() {
     lightboxRef.current?.close();
   }
@@ -361,6 +384,57 @@ export default function Home() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
     router.refresh();
+  }
+
+  // Avatar upload reuses the same /api/upload endpoint as attachments, then
+  // stamps the resulting URL onto the session's own user record -- always
+  // the caller's own account, PATCH /api/auth/me never takes a userId.
+  async function handleAvatarFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Choisis une image.");
+      return;
+    }
+    setAvatarError("");
+    setAvatarBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
+      const uploadJson = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error(uploadJson.error || "Échec de l'envoi.");
+      const patchRes = await fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatarUrl: uploadJson.url }),
+      });
+      if (!patchRes.ok) throw new Error("Échec de la mise à jour du profil.");
+      setMe((prev) => (prev ? { ...prev, avatarUrl: uploadJson.url } : prev));
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : "Échec de l'envoi.");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function removeAvatar() {
+    setAvatarError("");
+    setAvatarBusy(true);
+    try {
+      const res = await fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatarUrl: null }),
+      });
+      if (!res.ok) throw new Error("Échec de la mise à jour du profil.");
+      setMe((prev) => (prev ? { ...prev, avatarUrl: undefined } : prev));
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : "Échec de la mise à jour du profil.");
+    } finally {
+      setAvatarBusy(false);
+    }
   }
 
   const visibleProjects = board?.projects.filter((p) => !p.archived) ?? [];
@@ -1028,6 +1102,29 @@ export default function Home() {
   const allComments: Comment[] = liveCard?.comments ?? [];
   const topComments = allComments.filter((c) => !c.parentId);
 
+  // How deep a comment sits in its reply chain -- 0 for a top-level
+  // comment. Bounded by `seen` in case bad data ever formed a cycle
+  // upstream (the API already guards against that, this is just defensive).
+  function depthOf(commentId: string): number {
+    let depth = 0;
+    let current = allComments.find((c) => c.id === commentId);
+    const seen = new Set<string>();
+    while (current?.parentId && !seen.has(current.id)) {
+      seen.add(current.id);
+      depth++;
+      current = allComments.find((c) => c.id === current!.parentId);
+    }
+    return depth;
+  }
+
+  // While actively replying to one comment, anything nested deeper than it
+  // hides temporarily (see .comment.collapsed) so the thread doesn't bury
+  // the field you're typing into under its own old sub-replies. Comments at
+  // the same depth (siblings of the one being replied to) stay visible.
+  const replyFocusDepth = composer?.mode === "reply" ? depthOf(composer.targetId) : null;
+  const hiddenByFocusCount =
+    replyFocusDepth === null ? 0 : allComments.filter((c) => depthOf(c.id) > replyFocusDepth).length;
+
   function findLabel(labelId: string | undefined): Label | undefined {
     return activeProject?.labels?.find((l) => l.id === labelId);
   }
@@ -1121,13 +1218,14 @@ export default function Home() {
     );
   }
 
-  function renderComment(c: Comment, isReply: boolean): React.ReactNode {
+  function renderComment(c: Comment, depth: number): React.ReactNode {
     const mine = me?.username === c.authorUsername;
     const isEditingThis = composer?.mode === "edit" && composer.targetId === c.id;
-    const isReplyingHere = !isReply && composer?.mode === "reply" && composer.targetId === c.id;
-    const replies = isReply ? [] : repliesOf(c.id);
+    const isReplyingHere = composer?.mode === "reply" && composer.targetId === c.id;
+    const replies = repliesOf(c.id);
+    const collapsed = replyFocusDepth !== null && depth > replyFocusDepth;
     return (
-      <div className="comment" key={c.id}>
+      <div className={"comment" + (collapsed ? " collapsed" : "")} key={c.id}>
         <div className="comment-head">
           <div className="avatar" style={{ "--av": avatarColor(c.authorUsername) } as React.CSSProperties}>
             {initials(c.authorUsername)}
@@ -1153,17 +1251,13 @@ export default function Home() {
               </div>
             )}
             <div className="c-actions">
-              {!isReply && (
-                <button
-                  type="button"
-                  className="c-action-btn"
-                  onClick={() =>
-                    composer?.mode === "reply" && composer.targetId === c.id ? cancelComposer() : startReply(c.id)
-                  }
-                >
-                  ↩ Répondre
-                </button>
-              )}
+              <button
+                type="button"
+                className="c-action-btn"
+                onClick={() => (isReplyingHere ? cancelComposer() : startReply(c.id))}
+              >
+                ↩ Répondre
+              </button>
               {mine && (
                 <button type="button" className="c-action-btn" onClick={() => startEditComment(c)}>
                   ✏️ Modifier
@@ -1174,10 +1268,23 @@ export default function Home() {
         )}
 
         {isReplyingHere && (
-          <div className="c-replies reply-composer">{renderComposerBox("Publier la réponse")}</div>
+          <div className="c-replies reply-composer" id="reply-composer-box">
+            {renderComposerBox("Publier la réponse")}
+            {hiddenByFocusCount > 0 && (
+              <p className="mask-note">
+                {hiddenByFocusCount} réponse{hiddenByFocusCount > 1 ? "s" : ""} plus profonde
+                {hiddenByFocusCount > 1 ? "s" : ""} masquée{hiddenByFocusCount > 1 ? "s" : ""} pendant la rédaction —{" "}
+                <button type="button" className="mask-note-btn" onClick={cancelComposer}>
+                  tout afficher
+                </button>
+              </p>
+            )}
+          </div>
         )}
 
-        {replies.length > 0 && <div className="c-replies">{replies.map((r) => renderComment(r, true))}</div>}
+        {replies.length > 0 && (
+          <div className="c-replies">{replies.map((r) => renderComment(r, depth + 1))}</div>
+        )}
       </div>
     );
   }
@@ -1314,6 +1421,63 @@ export default function Home() {
         </button>
         {me && (
           <div className="user-badge">
+            <div className="espace-wrap" ref={espaceRef}>
+              <button
+                type="button"
+                className="espace-avatar"
+                style={!me.avatarUrl ? ({ "--av": avatarColor(me.username) } as React.CSSProperties) : undefined}
+                onClick={() => setEspaceOpen((v) => !v)}
+                aria-label="Mon espace"
+              >
+                {me.avatarUrl ? <img src={me.avatarUrl} alt="" /> : initials(me.username)}
+              </button>
+              {espaceOpen && (
+                <div className="espace-panel">
+                  <button
+                    type="button"
+                    className="espace-panel-avatar"
+                    onClick={() => avatarFileInputRef.current?.click()}
+                    aria-label={me.avatarUrl ? "Changer la photo" : "Ajouter une photo"}
+                  >
+                    {me.avatarUrl ? (
+                      <img src={me.avatarUrl} alt="" />
+                    ) : (
+                      <span style={{ "--av": avatarColor(me.username) } as React.CSSProperties}>
+                        {initials(me.username)}
+                      </span>
+                    )}
+                    <span className="espace-panel-avatar-overlay">
+                      {avatarBusy ? "…" : me.avatarUrl ? "Changer" : "Ajouter"}
+                    </span>
+                  </button>
+                  <div className="espace-panel-name">{me.username}</div>
+                  <div className="espace-panel-role">{me.role === "admin" ? "admin" : "membre"}</div>
+                  <div className="espace-panel-actions">
+                    <button
+                      type="button"
+                      className="tab"
+                      disabled={avatarBusy}
+                      onClick={() => avatarFileInputRef.current?.click()}
+                    >
+                      {avatarBusy ? "Envoi…" : me.avatarUrl ? "Changer la photo" : "Ajouter une photo"}
+                    </button>
+                    {me.avatarUrl && (
+                      <button type="button" className="tab" disabled={avatarBusy} onClick={removeAvatar}>
+                        Retirer
+                      </button>
+                    )}
+                  </div>
+                  {avatarError && <p className="cd-error">{avatarError}</p>}
+                  <input
+                    ref={avatarFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={handleAvatarFile}
+                  />
+                </div>
+              )}
+            </div>
             <span>{me.username}</span>
             {me.role === "admin" && (
               <Link className="tab" href="/users">
@@ -1858,7 +2022,7 @@ export default function Home() {
                 {topComments.length === 0 ? (
                   <p className="attachment-empty">Aucun commentaire.</p>
                 ) : (
-                  <div className="comment-list">{topComments.map((c) => renderComment(c, false))}</div>
+                  <div className="comment-list">{topComments.map((c) => renderComment(c, 0))}</div>
                 )}
                 <div className="composer">
                   <div className="composer-head">

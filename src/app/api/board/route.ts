@@ -1,11 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBoard, saveBoard, type BoardData, type Card } from "@/lib/store";
 import { sanitizeDescription, sanitizeInline, sanitizeColor } from "@/lib/sanitize";
-import { getSession } from "@/lib/auth";
+import { getSession, updateUserProjects } from "@/lib/auth";
 
-export async function GET() {
+type Session = NonNullable<Awaited<ReturnType<typeof getSession>>>;
+
+// Admin, and any member never restricted by an admin (projectIds still
+// undefined -- the default, so nobody is locked out by this feature
+// existing), see the whole board. A restricted member only sees the
+// projects on their allow-list.
+function visibleProjectIds(session: Session | null, data: BoardData): Set<string> | null {
+  if (!session || session.role === "admin" || !session.projectIds) return null;
+  return new Set(session.projectIds);
+}
+
+export async function GET(request: NextRequest) {
+  const token = request.cookies.get("board_session")?.value;
+  const session = await getSession(token);
   const data = await getBoard();
-  return NextResponse.json(data);
+  const allowed = visibleProjectIds(session, data);
+  if (!allowed) return NextResponse.json(data);
+  return NextResponse.json({ projects: data.projects.filter((p) => allowed.has(p.id)) });
 }
 
 function allCards(data: BoardData): Card[] {
@@ -68,16 +83,36 @@ function sanitizeComments(card: Card, oldCard: Card | undefined, sessionUsername
     } else {
       comment.translations = undefined;
     }
-    // A reply's parentId must point at an existing top-level comment on
-    // this same card; anything else collapses it back to top-level rather
-    // than leaving it pointing at nothing (or at itself).
-    if (comment.parentId) {
-      const parent = card.comments.find((c) => c.id === comment.parentId);
-      if (!parent || parent.parentId || comment.parentId === comment.id) {
-        comment.parentId = undefined;
-      }
-    }
   }
+
+  // A reply's parentId must point at an existing comment on this same card
+  // -- nesting is arbitrarily deep, any reply can itself be replied to.
+  // Only two things get rejected, both collapsing back to top-level rather
+  // than leaving a dangling reference: pointing at a comment that doesn't
+  // exist (or itself), and a parent chain that would form a cycle -- the UI
+  // never rewires an existing reply's target, so a cycle only happens by
+  // hitting this API directly.
+  const byId = new Map(card.comments.map((c) => [c.id, c]));
+  for (const comment of card.comments) {
+    if (!comment.parentId) continue;
+    if (comment.parentId === comment.id || !byId.has(comment.parentId)) {
+      comment.parentId = undefined;
+      continue;
+    }
+    const seen = new Set<string>([comment.id]);
+    let cur = byId.get(comment.parentId);
+    let cyclic = false;
+    while (cur) {
+      if (seen.has(cur.id)) {
+        cyclic = true;
+        break;
+      }
+      seen.add(cur.id);
+      cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+    }
+    if (cyclic) comment.parentId = undefined;
+  }
+
   card.comments = card.comments.filter((c) => validIds.has(c.id));
 }
 
@@ -166,7 +201,34 @@ export async function PUT(request: NextRequest) {
   const token = request.cookies.get("board_session")?.value;
   const session = await getSession(token);
   const oldData = await getBoard();
+
+  // A restricted member's own client only ever fetched their allowed
+  // projects, so their payload naturally can't carry the others -- but this
+  // endpoint doesn't only trust the client, same posture as comment
+  // ownership above. Any project outside the session's allow-list is
+  // restored from the last saved copy, untouched, regardless of what (if
+  // anything) the payload says about it. A brand-new project id -- not
+  // admin-gated, anyone can still create one -- is let through and granted
+  // to its creator so they don't lose sight of what they just made.
+  const allowed = visibleProjectIds(session, oldData);
+  let grantNewProjectId: string | undefined;
+  if (allowed) {
+    const oldById = new Map(oldData.projects.map((p) => [p.id, p]));
+    const incomingById = new Map(body.projects.map((p) => [p.id, p]));
+    const merged = oldData.projects.map((p) => (allowed.has(p.id) ? incomingById.get(p.id) ?? p : p));
+    for (const p of body.projects) {
+      if (!oldById.has(p.id)) {
+        merged.push(p);
+        grantNewProjectId = p.id;
+      }
+    }
+    body.projects = merged;
+  }
+
   sanitizeBoard(body, oldData, session?.username);
   await saveBoard(body);
+  if (grantNewProjectId && session) {
+    await updateUserProjects(session.userId, [...(session.projectIds ?? []), grantNewProjectId]);
+  }
   return NextResponse.json({ ok: true });
 }

@@ -10,6 +10,16 @@ export type User = {
   passwordHash: string;
   role: Role;
   createdAt: string;
+  // Uploaded via /api/upload, then stored here through PATCH /api/auth/me.
+  // Undefined -- initials avatar, same as before this feature existed.
+  avatarUrl?: string;
+  // Which projects this member can see. Undefined means unrestricted (every
+  // project) -- both the pre-this-feature default for existing accounts and
+  // the default for a freshly created one, so nobody gets silently locked
+  // out on deploy or at signup. An admin narrows it via
+  // PATCH /api/users/[id]. Ignored entirely for role "admin", who always
+  // sees every project regardless of what's stored here.
+  projectIds?: string[];
 };
 
 export type PublicUser = Omit<User, "passwordHash">;
@@ -112,7 +122,7 @@ export async function logout(token: string): Promise<void> {
 
 export async function getSession(
   token: string | undefined
-): Promise<{ userId: string; username: string; role: Role } | null> {
+): Promise<{ userId: string; username: string; role: Role; projectIds?: string[]; avatarUrl?: string } | null> {
   if (!token) return null;
   const sessions = await readSessions();
   const session = sessions.find((s) => s.id === token);
@@ -122,7 +132,13 @@ export async function getSession(
   const users = await readUsers();
   const user = users.find((u) => u.id === session.userId);
   if (!user) return null;
-  return { userId: user.id, username: user.username, role: user.role };
+  return {
+    userId: user.id,
+    username: user.username,
+    role: user.role,
+    projectIds: user.projectIds,
+    avatarUrl: user.avatarUrl,
+  };
 }
 
 export async function listUsers(): Promise<PublicUser[]> {
@@ -152,4 +168,24 @@ export async function createUser(username: string, password: string, role: Role)
 export async function deleteUser(id: string): Promise<void> {
   const users = await readUsers();
   await saveUsers(users.filter((u) => u.id !== id));
+}
+
+// undefined clears the restriction entirely (back to "sees every project");
+// an empty array is a deliberate, different state -- "no projects yet".
+export async function updateUserProjects(id: string, projectIds: string[] | undefined): Promise<PublicUser> {
+  const users = await readUsers();
+  const user = users.find((u) => u.id === id);
+  if (!user) throw new Error("Utilisateur introuvable.");
+  user.projectIds = projectIds;
+  await saveUsers(users);
+  return stripHash(user);
+}
+
+export async function updateUserAvatar(id: string, avatarUrl: string | undefined): Promise<PublicUser> {
+  const users = await readUsers();
+  const user = users.find((u) => u.id === id);
+  if (!user) throw new Error("Utilisateur introuvable.");
+  user.avatarUrl = avatarUrl;
+  await saveUsers(users);
+  return stripHash(user);
 }

@@ -194,6 +194,113 @@ header {
   font-size: 12.5px;
   color: var(--ink-soft);
 }
+
+/* ---- "Mon espace" (avatar + profile popover) ---- */
+.espace-wrap {
+  position: relative;
+}
+.espace-avatar {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--paper);
+  background: var(--av, var(--ink-soft));
+  cursor: pointer;
+}
+.espace-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.espace-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+}
+.espace-panel-avatar {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.espace-panel-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.espace-panel-avatar span {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--paper);
+  background: var(--av, var(--ink-soft));
+}
+.espace-panel-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.espace-panel-avatar:hover .espace-panel-avatar-overlay {
+  opacity: 1;
+}
+.espace-panel-name {
+  font-family: var(--font-body), sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.espace-panel-role {
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: -6px;
+}
+.espace-panel-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
 .restore-btn {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11.5px;
@@ -1047,6 +1154,29 @@ dialog.card-modal::backdrop {
   display: flex;
   flex-direction: column;
 }
+/* While replying to one comment, everything nested deeper than it is
+   temporarily hidden to cut clutter -- comments at the same depth (its own
+   siblings) stay visible. Cancelling the reply (or posting it) restores
+   everything. See renderComment/replyFocusDepth in page.tsx. */
+.comment.collapsed {
+  display: none;
+}
+.mask-note {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin: 8px 0 0;
+}
+.mask-note-btn {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--blue);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
 .comment-head {
   display: flex;
   align-items: center;
@@ -1891,6 +2021,8 @@ dialog.lightbox::backdrop {
   border-radius: 5px;
   background: var(--card);
   font-size: 13px;
+  flex-wrap: wrap;
+  position: relative;
 }
 .user-row .user-name {
   font-weight: 600;
@@ -1907,4 +2039,85 @@ dialog.lightbox::backdrop {
 }
 .user-row .remove:hover {
   color: var(--danger);
+}
+
+/* ---- project access per user (admin) ---- */
+.proj-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.proj-chip {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 2px 7px;
+}
+.proj-chip.all {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+.proj-chip.none {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.proj-picker-wrap {
+  position: relative;
+}
+.edit-projects {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.edit-projects:hover {
+  color: var(--blue);
+}
+.proj-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 10px;
+  width: 220px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+.proj-picker-head {
+  font-size: 11px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+}
+.proj-picker-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 6px 0;
+}
+.proj-picker label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 5px 2px;
+  cursor: pointer;
+}
+.proj-picker label.disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}
+.proj-picker input {
+  accent-color: var(--blue);
+}
+.proj-picker-archived {
+  color: var(--ink-faint);
 }
