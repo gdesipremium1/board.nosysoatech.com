@@ -706,60 +706,31 @@ dialog.card-modal::backdrop {
   background: rgba(0, 0, 0, 0.7);
 }
 
-/* ---- card modal: back to centered (like the original dialog.card-modal)
-   after a round trying a docked side panel -- large and near-fullscreen,
-   with a dimmed backdrop reusing the same colors dialog.card-modal's own
-   ::backdrop used. No backdrop-click-to-close: the original <dialog>
-   never had that wired up either (native dialogs don't close on backdrop
-   click without extra JS, and none was added) -- Échap or × stay the
-   only way out, unchanged.
-   No open/slide animation on purpose -- one was measured leaving a
-   previous version of this element stuck mid-transition well past its
-   duration. Not worth chasing for a decorative flourish. */
-.card-modal-backdrop {
+/* ---- card panel: a docked side panel (Messenger/WhatsApp Web style)
+   instead of a centered dialog -- the board stays visible and usable
+   behind it, so there's no backdrop to dim/block it.
+   No slide-in animation here on purpose -- an `animation` on this exact
+   element was measured leaving it stuck mid-transition (translateX(100%),
+   fully off-screen) well past its 0.18s duration, in a way a plain
+   `transition` triggered by a mounted-state class doesn't reproduce.
+   Not worth chasing for a decorative flourish; the panel just appears. */
+.card-panel {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(460px, 100vw);
   z-index: 40;
-  background: rgba(10, 13, 8, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 14px;
-}
-:root:not([data-theme="light"]) .card-modal-backdrop {
-  background: rgba(0, 0, 0, 0.7);
-}
-:root[data-theme="dark"] .card-modal-backdrop {
-  background: rgba(0, 0, 0, 0.7);
-}
-.card-modal-box {
-  width: min(1100px, 100%);
-  height: 100%;
   background: var(--card);
-  border-radius: 8px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  border-left: 1px solid var(--line);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 @media (max-width: 720px) {
-  .card-modal-backdrop {
-    padding: 0;
+  .card-panel {
+    width: 100vw;
   }
-  .card-modal-box {
-    border-radius: 0;
-  }
-}
-/* One shared scrollbar for "Détails de la carte" + "Commentaires" --
-   was two stacked scroll regions (each with its own bar) fighting for a
-   sliver of height; now a single list, only the header and composer stay
-   pinned outside it. */
-.modal-scroll {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
 }
 .details-region {
   flex-shrink: 0;
@@ -787,12 +758,9 @@ dialog.card-modal::backdrop {
 .details-region.compact .details-collapse-btn {
   transform: rotate(180deg);
 }
-/* No overflow/max-height while expanded -- the whole point of sharing
-   .modal-scroll is that this no longer needs its own scroll boundary
-   (which also would have clipped the description/note editors' emoji
-   popover, the same bug already fixed once on .mini-editor). Only the
-   collapsed state clips, down to nothing. */
 .details-scroll {
+  max-height: 46vh;
+  overflow-y: auto;
   padding: 0 20px 16px;
   display: flex;
   flex-direction: column;
@@ -818,6 +786,8 @@ dialog.card-modal::backdrop {
   border-bottom: 1px solid var(--line);
 }
 .thread {
+  flex: 1;
+  overflow-y: auto;
   min-height: 80px;
   padding: 16px 20px;
   display: flex;

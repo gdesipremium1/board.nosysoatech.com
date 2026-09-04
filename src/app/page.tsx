@@ -1991,18 +1991,13 @@ export default function Home() {
         ))}
       </div>
 
-      {/* ---- card detail: back to a centered box (like the original
-           dialog.card-modal) after trying a docked side panel -- large
-           and near-fullscreen now, with a dimmed backdrop. No
-           backdrop-click-to-close, matching the original <dialog>'s own
-           behavior (no JS added there for it either -- Échap or the ×
-           are the only ways out, same as before). Card-management
-           fields keep their exact look in a collapsible region;
-           comments are chat bubbles below, cascade fully intact; both
-           now share a single scrollbar instead of two stacked ones. ---- */}
+      {/* ---- card detail: a docked side panel (Messenger/WhatsApp Web
+           style), not a centered dialog -- the board stays visible and
+           usable behind it. Card-management fields keep today's exact
+           look in their own collapsible region; comments are chat
+           bubbles below, cascade fully intact. ---- */}
       {draft && selected && (
-        <div className="card-modal-backdrop">
-        <div className="card-modal-box">
+        <div className="card-panel">
           <>
             <div className="cd-head">
               <div className="cd-title-wrap">
@@ -2289,10 +2284,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* One shared scrollbar for "Détails de la carte" + "Commentaires"
-                -- was two stacked scroll regions, now a single list. */}
-            <div className="modal-scroll">
-
             <div className={"details-region" + (detailsCollapsed ? " compact" : "")}>
               <div
                 className="details-toggle-row"
@@ -2553,7 +2544,6 @@ export default function Home() {
               )}
             </div>
 
-            </div>
             <div className="composer-bar-wrap">
               <div className="composer-head">
                 <div className="avatar" style={{ "--av": avatarColor(me?.username ?? "") } as React.CSSProperties}>
@@ -2613,7 +2603,6 @@ export default function Home() {
               <input ref={composerFileInputRef} type="file" hidden onChange={handleComposerFile} />
             </div>
           </>
-        </div>
         </div>
       )}
 
