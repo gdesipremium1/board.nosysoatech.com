@@ -41,6 +41,7 @@ openssl rand -hex 24
 | GET | `/api/prospection/export?format=csv&dataset=prospects` | Export CSV prospects |
 | GET | `/api/prospection/export?format=csv&dataset=events` | Export CSV historique |
 | GET | `/api/prospection/export?format=json` | Export JSON complet |
+| POST | `/api/prospection/import` | Restauration complète d'un export JSON `{ prospects, events }` en conservant identifiants, dates et auteurs ; ce qui existe déjà est ignoré. Clé d'API ou admin uniquement. |
 
 ### Événements
 

@@ -179,6 +179,95 @@ function applyEventToProspect(p: Prospect, e: ProspectEvent, history: ProspectEv
   }
 }
 
+// Full restore of an export (GET /api/prospection/export?format=json), e.g.
+// to move a local board to the online one. Unlike createProspects/addEvent,
+// ids, stages, dates and actors are kept as they are, so the history reads
+// exactly like the source. Records whose id already exists are skipped,
+// never overwritten, which makes a re-run harmless.
+export async function importFull(
+  data: { prospects?: unknown; events?: unknown },
+  actor: string
+): Promise<{ prospects: number; events: number; skippedProspects: number; skippedEvents: number }> {
+  const prospects = await listProspects();
+  const events = await listEvents();
+  const prospectIds = new Set(prospects.map((p) => p.id));
+  const eventIds = new Set(events.map((e) => e.id));
+  const now = new Date().toISOString();
+  let addedP = 0;
+  let skippedP = 0;
+  let addedE = 0;
+  let skippedE = 0;
+
+  for (const raw of (Array.isArray(data.prospects) ? data.prospects : []).slice(0, 5000)) {
+    if (!raw || typeof raw !== "object") continue;
+    const input = raw as Record<string, unknown>;
+    const id = str(input.id, 100);
+    const name = str(input.name, 200);
+    if (!id || !name) continue;
+    if (prospectIds.has(id)) {
+      skippedP++;
+      continue;
+    }
+    const stage = str(input.stage, 20) as Stage | undefined;
+    const p: Prospect = {
+      id,
+      name,
+      emails: [],
+      phones: [],
+      tags: [],
+      stage: stage && STAGES.includes(stage) ? stage : "a_contacter",
+      archived: input.archived === true,
+      custom: {},
+      createdAt: isoDate(input.createdAt) ?? now,
+      updatedAt: isoDate(input.updatedAt) ?? now,
+    };
+    applyFields(p, input);
+    p.lastContactAt = isoDate(input.lastContactAt);
+    prospects.push(p);
+    prospectIds.add(id);
+    addedP++;
+  }
+
+  for (const raw of (Array.isArray(data.events) ? data.events : []).slice(0, 50000)) {
+    if (!raw || typeof raw !== "object") continue;
+    const input = raw as Record<string, unknown>;
+    const id = str(input.id, 100);
+    const prospectId = str(input.prospectId, 100);
+    const type = input.type as EventType;
+    if (!id || !prospectId || !prospectIds.has(prospectId) || !EVENT_TYPES.includes(type)) continue;
+    if (eventIds.has(id)) {
+      skippedE++;
+      continue;
+    }
+    const channel = str(input.channel, 20) as Channel | undefined;
+    const sentiment = str(input.sentiment, 10) as ProspectEvent["sentiment"];
+    const stage = str(input.stage, 20) as Stage | undefined;
+    events.push({
+      id,
+      prospectId,
+      type,
+      at: isoDate(input.at) ?? now,
+      actor: str(input.actor, 40) ?? actor,
+      channel: channel && CHANNELS.includes(channel) ? channel : undefined,
+      subject: str(input.subject, 300),
+      body: str(input.body, 20000),
+      gmailDraftId: str(input.gmailDraftId, 200),
+      gmailMessageId: str(input.gmailMessageId, 200),
+      gmailThreadId: str(input.gmailThreadId, 200),
+      sentiment: sentiment && ["positive", "neutre", "negative"].includes(sentiment) ? sentiment : undefined,
+      stage: stage && STAGES.includes(stage) ? stage : undefined,
+      note: str(input.note, 5000),
+    });
+    eventIds.add(id);
+    addedE++;
+  }
+
+  events.sort((a, b) => a.at.localeCompare(b.at));
+  await writeJson(PROSPECTS_FILE, prospects);
+  await writeJson(EVENTS_FILE, events);
+  return { prospects: addedP, events: addedE, skippedProspects: skippedP, skippedEvents: skippedE };
+}
+
 export async function createProspects(
   inputs: Record<string, unknown>[],
   actor: string,
