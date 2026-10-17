@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import "./prospection.css";
+import AppMenu from "@/components/AppMenu";
 import {
   EVENT_LABELS,
   STAGE_LABELS,
@@ -13,7 +13,7 @@ import {
   type Stage,
 } from "@/lib/prospectionShared";
 
-type Me = { userId: string; username: string; role: string };
+type Me = { userId: string; username: string; role: string; avatarUrl?: string };
 type View = "pipeline" | "table" | "stats";
 
 // Pipeline columns group a few stages each; "perdu" only shows in the
@@ -386,12 +386,11 @@ export default function ProspectionPage() {
           <span className="wm-tech">tech</span>
           <span className="wm-board">/board</span>
         </div>
-        <div className="tabs">
-          <Link className="tab" href="/">Board</Link>
-          <span className="tab active">Prospection</span>
-          {me?.role === "admin" && <Link className="tab" href="/users">Utilisateurs</Link>}
+        <div className="crumb">
+          <span className="crumb-sep">›</span>
+          <span className="crumb-name">Prospection</span>
         </div>
-        {me && <span className="px-me">{me.username}</span>}
+        {me && <AppMenu current="prospection" me={me} />}
       </header>
 
       <div className="px-body">

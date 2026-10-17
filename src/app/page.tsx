@@ -283,11 +283,13 @@ export default function Home() {
   const [langSwitching, setLangSwitching] = useState(false);
   const [langError, setLangError] = useState("");
   const [espaceOpen, setEspaceOpen] = useState(false);
+  // Sections of the single header menu: the profile block is folded by
+  // default (the project list now lives on /projets).
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [prospectCount, setProspectCount] = useState<number | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState("");
   const [collapsedCommentIds, setCollapsedCommentIds] = useState<Set<string>>(new Set());
-  const [projectLogoBusy, setProjectLogoBusy] = useState(false);
-  const [projectLogoError, setProjectLogoError] = useState("");
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [allUsers, setAllUsers] = useState<PublicUserLite[] | null>(null);
   const [participantsBusyId, setParticipantsBusyId] = useState<string | null>(null);
@@ -302,7 +304,6 @@ export default function Home() {
   const moveMenuRef = useRef<HTMLDivElement | null>(null);
   const espaceRef = useRef<HTMLDivElement | null>(null);
   const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
-  const projectLogoFileInputRef = useRef<HTMLInputElement | null>(null);
   const participantsRef = useRef<HTMLDivElement | null>(null);
 
   const dragData = useRef<{ cardId: string; fromColId: string } | null>(null);
@@ -322,8 +323,15 @@ export default function Home() {
       .then((r) => r.json())
       .then((data: BoardData) => {
         setBoard(data);
-        const firstActive = data.projects.find((p) => !p.archived);
+        // /?project=<id> comes from the project listing (/projets),
+        // /?trash=1 from the "Corbeille" entry of the shared header menu.
+        const params = new URLSearchParams(window.location.search);
+        const wanted = params.get("project");
+        const firstActive =
+          data.projects.find((p) => !p.archived && p.id === wanted) ?? data.projects.find((p) => !p.archived);
         setActiveProjectId(firstActive?.id ?? "");
+        if (params.get("trash") === "1") setTrashOpen(true);
+        if (wanted || params.has("trash")) window.history.replaceState(null, "", "/");
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -336,6 +344,22 @@ export default function Home() {
   useEffect(() => {
     if (trashOpen) trashDialogRef.current?.showModal();
   }, [trashOpen]);
+
+  // The board fills the window below the header (see .board in globals.css);
+  // the header can wrap on narrow screens, so its real height is tracked.
+  useEffect(() => {
+    const header = document.querySelector("header");
+    if (!header) return;
+    const update = () => document.documentElement.style.setProperty("--header-h", `${header.offsetHeight}px`);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(header);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [loading]);
 
   useEffect(() => {
     if (lightboxUrl) lightboxRef.current?.showModal();
@@ -381,8 +405,24 @@ export default function Home() {
   // However it closes (outside click, toggling it shut), don't leave the
   // profile form silently open for next time.
   useEffect(() => {
-    if (!espaceOpen) setProfileEditing(false);
+    if (!espaceOpen) {
+      setProfileEditing(false);
+      setProfileOpen(false);
+      setParticipantsOpen(false);
+    }
   }, [espaceOpen]);
+
+  // Live prospect count next to "Prospects" in the menu (admin/manager only,
+  // fetched when the menu opens so the board itself never waits on it).
+  useEffect(() => {
+    if (!espaceOpen || (me?.role !== "admin" && me?.role !== "manager")) return;
+    fetch("/api/prospection/prospects")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (json) setProspectCount(json.prospects.filter((p: { archived?: boolean }) => !p.archived).length);
+      })
+      .catch(() => undefined);
+  }, [espaceOpen, me?.role]);
 
   // Same pattern for the participants panel, plus a lazy fetch of the user
   // list the first time it's opened (admin/manager only, see GET
@@ -476,36 +516,6 @@ export default function Home() {
     }
   }
 
-  // Same upload endpoint as avatars/attachments. Only shown to admin/manager
-  // (see canManage) -- the server independently reverts any logo change
-  // from anyone else, this is just what lets the button show at all.
-  async function handleProjectLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !activeProjectId) return;
-    if (!file.type.startsWith("image/")) {
-      setProjectLogoError("Choisis une image.");
-      return;
-    }
-    setProjectLogoError("");
-    setProjectLogoBusy(true);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Échec de l'envoi.");
-      updateBoard((b) => {
-        const project = b.projects.find((p) => p.id === activeProjectId);
-        if (project) project.logoUrl = json.url;
-      });
-    } catch (err) {
-      setProjectLogoError(err instanceof Error ? err.message : "Échec de l'envoi.");
-    } finally {
-      setProjectLogoBusy(false);
-    }
-  }
-
   async function removeAvatar() {
     setAvatarError("");
     setAvatarBusy(true);
@@ -585,43 +595,6 @@ export default function Home() {
   // participants. This is only a UI convenience -- the server enforces it
   // regardless of what the client sends.
   const canManage = me?.role === "admin" || me?.role === "manager";
-
-  function addProject() {
-    const name = window.prompt("Nom du nouveau projet :");
-    if (!name || !name.trim()) return;
-    const id = newId();
-    updateBoard((b) => {
-      b.projects.push({
-        id,
-        name: name.trim(),
-        archived: false,
-        labels: [],
-        columns: [
-          { id: "todo", name: "À faire", cards: [] },
-          { id: "doing", name: "En cours", cards: [] },
-          { id: "review", name: "En cours de validation", cards: [] },
-          { id: "done", name: "Terminé", cards: [] },
-          { id: "closed", name: "Fermé", cards: [] },
-        ],
-      });
-    });
-    setActiveProjectId(id);
-  }
-
-  function archiveProject(projectId: string) {
-    if (!window.confirm("Mettre ce projet à la corbeille ? Tu pourras le restaurer plus tard.")) return;
-    updateBoard((b) => {
-      const project = b.projects.find((p) => p.id === projectId);
-      if (project) {
-        project.archived = true;
-        project.archivedAt = new Date().toISOString();
-      }
-    });
-    if (projectId === activeProjectId) {
-      const next = visibleProjects.find((p) => p.id !== projectId);
-      setActiveProjectId(next?.id ?? "");
-    }
-  }
 
   // A user can see this project if they're admin, unrestricted (projectIds
   // undefined -- the default), or this project id is explicitly on their
@@ -1707,84 +1680,40 @@ export default function Home() {
           <span className="wm-board">/board</span>
           <span className="lock">🔒 privé</span>
         </div>
-        <div className="tabs">
-          {visibleProjects.map((p) => (
-            <div key={p.id} className={"tab-wrap" + (p.id === activeProjectId ? " active" : "")}>
-              <button
-                type="button"
-                className={"tab" + (p.id === activeProjectId ? " active" : "")}
-                onClick={() => setActiveProjectId(p.id)}
-              >
-                {p.logoUrl && <img src={p.logoUrl} alt="" className="tab-logo" />}
-                {p.name}
-              </button>
-              {p.id === activeProjectId && canManage && (
-                <button
-                  type="button"
-                  className="tab-logo-edit"
-                  disabled={projectLogoBusy}
-                  title={p.logoUrl ? "Changer le logo du projet" : "Ajouter un logo au projet"}
-                  onClick={() => projectLogoFileInputRef.current?.click()}
-                >
-                  {projectLogoBusy ? "…" : "🖼"}
-                </button>
-              )}
-              {p.id === activeProjectId && canManage && (
-                <button
-                  type="button"
-                  className="tab-trash"
-                  title="Mettre à la corbeille"
-                  onClick={() => archiveProject(p.id)}
-                >
-                  🗑
-                </button>
-              )}
-            </div>
-          ))}
-          <button type="button" className="tab-add" onClick={addProject}>
-            + projet
-          </button>
-          <input
-            ref={projectLogoFileInputRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={handleProjectLogoFile}
-          />
-        </div>
-        {canManage && activeProject && (
-          <div className="participants-wrap" ref={participantsRef}>
-            <button
-              type="button"
-              className="trash-open"
-              onClick={() => setParticipantsOpen((v) => !v)}
-            >
-              👥 Participants
-            </button>
-            {participantsOpen && renderParticipantsPanel()}
+        {activeProject && (
+          <div className="crumb">
+            <span className="crumb-sep">›</span>
+            {activeProject.logoUrl && <img src={activeProject.logoUrl} alt="" className="tab-logo" />}
+            <span className="crumb-name">{activeProject.name}</span>
           </div>
         )}
-        <button type="button" className="trash-open" onClick={() => setTrashOpen(true)}>
-          🗑 Corbeille {archivedProjects.length > 0 ? `(${archivedProjects.length})` : ""}
-        </button>
-        {projectLogoError && <span className="cd-error">{projectLogoError}</span>}
+        {saveError && <span className="cd-error">{saveError}</span>}
         {me && (
-          <div className="user-badge">
-            <div className="espace-wrap" ref={espaceRef}>
-              <button
-                type="button"
+          <div className="espace-wrap menu-wrap" ref={espaceRef}>
+            <button
+              type="button"
+              className={"menu-trigger" + (espaceOpen ? " open" : "")}
+              onClick={() => setEspaceOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={espaceOpen}
+            >
+              <span
                 className="espace-avatar"
                 style={!me.avatarUrl ? ({ "--av": avatarColor(me.username) } as React.CSSProperties) : undefined}
-                onClick={() => setEspaceOpen((v) => !v)}
-                aria-label="Mon espace"
               >
                 {me.avatarUrl ? <img src={me.avatarUrl} alt="" /> : initials(me.username)}
-              </button>
-              {espaceOpen && (
-                <div className="espace-panel">
+              </span>
+              <span className="menu-trigger-name">{me.username}</span>
+              <span className="menu-chevron" aria-hidden="true">▾</span>
+            </button>
+
+            {espaceOpen && (
+              <div className="main-menu" role="menu">
+                {/* ---- profil (replié par défaut) ---- */}
+                <div className="mm-profile">
                   <button
                     type="button"
-                    className="espace-panel-avatar"
+                    className="espace-panel-avatar mm-avatar"
                     onClick={() => avatarFileInputRef.current?.click()}
                     aria-label={me.avatarUrl ? "Changer la photo" : "Ajouter une photo"}
                   >
@@ -1795,119 +1724,158 @@ export default function Home() {
                         {initials(me.username)}
                       </span>
                     )}
-                    <span className="espace-panel-avatar-overlay">
-                      {avatarBusy ? "…" : me.avatarUrl ? "Changer" : "Ajouter"}
-                    </span>
+                    <span className="espace-panel-avatar-overlay">{avatarBusy ? "…" : "📷"}</span>
                   </button>
-                  <div className="espace-panel-name">{me.username}</div>
-                  <div className="espace-panel-role">{roleLabel(me.role)}</div>
-                  <div className="espace-panel-actions">
-                    <button
-                      type="button"
-                      className="tab"
-                      disabled={avatarBusy}
-                      onClick={() => avatarFileInputRef.current?.click()}
-                    >
-                      {avatarBusy ? "Envoi…" : me.avatarUrl ? "Changer la photo" : "Ajouter une photo"}
+                  <div>
+                    <div className="mm-name">{me.username}</div>
+                    <div className="mm-role">{roleLabel(me.role)}</div>
+                    <button type="button" className="mm-link" onClick={() => setProfileOpen((v) => !v)}>
+                      {profileOpen ? "Masquer le profil" : "Modifier le profil"}
                     </button>
-                    {me.avatarUrl && (
-                      <button type="button" className="tab" disabled={avatarBusy} onClick={removeAvatar}>
-                        Retirer
+                  </div>
+                </div>
+                <input
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={handleAvatarFile}
+                />
+                {avatarError && <p className="cd-error">{avatarError}</p>}
+
+                {profileOpen && (
+                  <div className="mm-profile-edit">
+                    <div className="espace-panel-actions">
+                      <button
+                        type="button"
+                        className="tab"
+                        disabled={avatarBusy}
+                        onClick={() => avatarFileInputRef.current?.click()}
+                      >
+                        {avatarBusy ? "Envoi…" : me.avatarUrl ? "Changer la photo" : "Ajouter une photo"}
+                      </button>
+                      {me.avatarUrl && (
+                        <button type="button" className="tab" disabled={avatarBusy} onClick={removeAvatar}>
+                          Retirer
+                        </button>
+                      )}
+                    </div>
+                    {profileEditing ? (
+                      <form className="profile-form" onSubmit={submitProfile}>
+                        <label className="field">
+                          <span>Identifiant</span>
+                          <input value={profileUsername} onChange={(e) => setProfileUsername(e.target.value)} />
+                        </label>
+                        <label className="field">
+                          <span>Mot de passe actuel</span>
+                          <input
+                            type="password"
+                            value={profileCurrentPassword}
+                            onChange={(e) => setProfileCurrentPassword(e.target.value)}
+                            placeholder="pour changer le mot de passe"
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Nouveau mot de passe</span>
+                          <input
+                            type="password"
+                            value={profileNewPassword}
+                            onChange={(e) => setProfileNewPassword(e.target.value)}
+                            minLength={8}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Confirmer</span>
+                          <input
+                            type="password"
+                            value={profileConfirmPassword}
+                            onChange={(e) => setProfileConfirmPassword(e.target.value)}
+                            minLength={8}
+                          />
+                        </label>
+                        <div className="espace-panel-actions">
+                          <button
+                            type="button"
+                            className="tab"
+                            disabled={profileBusy}
+                            onClick={() => setProfileEditing(false)}
+                          >
+                            Annuler
+                          </button>
+                          <button type="submit" className="tab" disabled={profileBusy}>
+                            {profileBusy ? "…" : "Enregistrer"}
+                          </button>
+                        </div>
+                        {profileError && <p className="cd-error">{profileError}</p>}
+                      </form>
+                    ) : (
+                      <button type="button" className="tab" onClick={startEditProfile}>
+                        ✏️ Identifiant et mot de passe
                       </button>
                     )}
                   </div>
-                  {avatarError && <p className="cd-error">{avatarError}</p>}
-                  <input
-                    ref={avatarFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={handleAvatarFile}
-                  />
+                )}
 
-                  <div className="espace-sep" />
+                <div className="mm-sep" />
 
-                  {profileEditing ? (
-                    <form className="profile-form" onSubmit={submitProfile}>
-                      <label className="field">
-                        <span>Identifiant</span>
-                        <input value={profileUsername} onChange={(e) => setProfileUsername(e.target.value)} />
-                      </label>
-                      <label className="field">
-                        <span>Mot de passe actuel</span>
-                        <input
-                          type="password"
-                          value={profileCurrentPassword}
-                          onChange={(e) => setProfileCurrentPassword(e.target.value)}
-                          placeholder="pour changer le mot de passe"
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Nouveau mot de passe</span>
-                        <input
-                          type="password"
-                          value={profileNewPassword}
-                          onChange={(e) => setProfileNewPassword(e.target.value)}
-                          minLength={8}
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Confirmer</span>
-                        <input
-                          type="password"
-                          value={profileConfirmPassword}
-                          onChange={(e) => setProfileConfirmPassword(e.target.value)}
-                          minLength={8}
-                        />
-                      </label>
-                      <div className="espace-panel-actions">
-                        <button
-                          type="button"
-                          className="tab"
-                          disabled={profileBusy}
-                          onClick={() => setProfileEditing(false)}
-                        >
-                          Annuler
-                        </button>
-                        <button type="submit" className="tab" disabled={profileBusy}>
-                          {profileBusy ? "…" : "Enregistrer"}
-                        </button>
-                      </div>
-                      {profileError && <p className="cd-error">{profileError}</p>}
-                    </form>
-                  ) : (
-                    <button type="button" className="tab" onClick={startEditProfile}>
-                      ✏️ Modifier le profil
+                {/* ---- Board : page de listing des projets ---- */}
+                <Link className="mm-item" href="/projets">
+                  <span className="mm-icon" aria-hidden="true">▦</span>
+                  Board
+                  <span className="mm-meta mm-meta-text">liste des projets</span>
+                </Link>
+
+                {canManage && (
+                  <Link className="mm-item" href="/prospection">
+                    <span className="mm-icon" aria-hidden="true">◎</span>
+                    Prospects
+                    {prospectCount !== null && <span className="mm-meta">{prospectCount}</span>}
+                  </Link>
+                )}
+
+                {canManage && activeProject && (
+                  <div className="menu-participants" ref={participantsRef}>
+                    <button type="button" className="mm-item" onClick={() => setParticipantsOpen((v) => !v)}>
+                      <span className="mm-icon" aria-hidden="true">👥</span>
+                      Participants
+                      <span className="mm-meta mm-meta-text">{activeProject.name}</span>
                     </button>
-                  )}
-                </div>
-              )}
-            </div>
-            <span>{me.username}</span>
-            {(me.role === "admin" || me.role === "manager") && (
-              <Link className="tab" href="/prospection">
-                Prospection
-              </Link>
+                    {participantsOpen && renderParticipantsPanel()}
+                  </div>
+                )}
+
+                {me.role === "admin" && (
+                  <Link className="mm-item" href="/users">
+                    <span className="mm-icon" aria-hidden="true">⚙</span>
+                    Utilisateurs
+                    <span className="mm-meta mm-meta-text">admin</span>
+                  </Link>
+                )}
+
+                <button
+                  type="button"
+                  className="mm-item"
+                  onClick={() => {
+                    setEspaceOpen(false);
+                    setTrashOpen(true);
+                  }}
+                >
+                  <span className="mm-icon" aria-hidden="true">🗑</span>
+                  Corbeille
+                  {archivedProjects.length > 0 && <span className="mm-meta">{archivedProjects.length}</span>}
+                </button>
+
+                <div className="mm-sep" />
+
+                <button type="button" className="mm-item mm-logout" onClick={handleLogout}>
+                  <span className="mm-icon" aria-hidden="true">⏻</span>
+                  Déconnexion
+                </button>
+              </div>
             )}
-            {me.role === "admin" && (
-              <Link className="tab" href="/users">
-                Utilisateurs
-              </Link>
-            )}
-            <button type="button" className="tab" onClick={handleLogout}>
-              Déconnexion
-            </button>
           </div>
         )}
-        {saveError && <span className="cd-error">{saveError}</span>}
       </header>
-
-      {activeProject && (
-        <div className="project-banner">
-          {activeProject.logoUrl && <img src={activeProject.logoUrl} alt="" className="project-banner-logo" />}
-          <span className="project-banner-name">{activeProject.name}</span>
-        </div>
-      )}
 
       <div className="board">
         {activeProject?.columns.map((col: Column) => (

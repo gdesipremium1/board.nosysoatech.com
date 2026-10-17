@@ -311,6 +311,248 @@ header {
   color: var(--ink-soft);
 }
 
+/* ---- header: breadcrumb + single dropdown menu ---- */
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.crumb-sep {
+  color: var(--ink-faint);
+}
+.crumb-name {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-wrap {
+  margin-left: auto;
+}
+.menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 3px 10px 3px 3px;
+  cursor: pointer;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.menu-trigger:hover,
+.menu-trigger.open {
+  border-color: var(--ink-faint);
+}
+.menu-chevron {
+  color: var(--ink-faint);
+  font-size: 11px;
+  transition: transform 0.15s;
+}
+.menu-trigger.open .menu-chevron {
+  transform: rotate(180deg);
+}
+.main-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 300px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+}
+.mm-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+}
+.mm-avatar {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+.mm-avatar span:first-child {
+  font-size: 14px;
+}
+.mm-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.mm-role {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.mm-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--blue);
+  cursor: pointer;
+}
+.mm-link:hover {
+  text-decoration: underline;
+}
+.mm-profile-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 10px;
+}
+.mm-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
+}
+.mm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+}
+.mm-item:hover {
+  background: var(--paper);
+}
+.mm-icon {
+  width: 18px;
+  text-align: center;
+  color: var(--ink-soft);
+  flex-shrink: 0;
+}
+.mm-meta {
+  margin-left: auto;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+.mm-meta-text {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mm-current {
+  cursor: default;
+  background: var(--paper);
+  font-weight: 600;
+}
+.mm-logout,
+.mm-logout .mm-icon {
+  color: var(--danger);
+}
+.mm-projects {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 4px;
+}
+.mm-project {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+.mm-project:hover {
+  background: var(--paper);
+}
+.mm-project-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 18px;
+  border: none;
+  background: none;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.mm-project.active .mm-project-name {
+  color: var(--blue);
+  font-weight: 600;
+}
+.mm-add {
+  color: var(--ink-soft);
+}
+.mm-add:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+.mm-check {
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.mm-project-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 6px;
+  color: var(--ink-faint);
+}
+.mm-project-action:hover {
+  color: var(--ink);
+}
+.mm-project-action.danger:hover {
+  color: var(--danger);
+}
+.menu-participants .participants-panel {
+  position: static;
+  width: auto;
+  box-shadow: none;
+  margin: 2px 6px 6px 34px;
+  max-height: 260px;
+}
+@media (max-width: 640px) {
+  /* Keep the header on one line so the full-height board stays aligned. */
+  header {
+    flex-wrap: nowrap;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .wordmark .lock,
+  .wm-board {
+    display: none;
+  }
+  .menu-trigger-name {
+    display: none;
+  }
+  .main-menu {
+    width: min(300px, calc(100vw - 24px));
+  }
+}
+
 /* ---- "Mon espace" (avatar + profile popover) ---- */
 .espace-wrap {
   position: relative;
@@ -451,6 +693,11 @@ header {
   padding: 20px 22px;
   align-items: flex-start;
   overflow-x: auto;
+  overflow-y: hidden;
+  /* Fills the rest of the window so the horizontal scrollbar always sits at
+     the bottom of the screen, not right under the shortest column.
+     --header-h is measured by the board page (src/app/page.tsx). */
+  height: calc(100dvh - var(--header-h, 62px));
 }
 .col {
   background: var(--card);
@@ -460,7 +707,7 @@ header {
   flex: 0 0 280px;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 110px);
+  max-height: 100%;
 }
 .col-head {
   display: flex;
@@ -695,6 +942,12 @@ dialog.card-modal {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
+}
+/* "display: flex" above overrides the browser's hidden state for a closed
+   <dialog>: without this, the closed trash dialog rendered at the bottom of
+   the page like a footer. */
+dialog.card-modal:not([open]) {
+  display: none;
 }
 dialog.card-modal::backdrop {
   background: rgba(10, 13, 8, 0.55);
