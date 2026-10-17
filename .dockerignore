@@ -1,0 +1,10 @@
+node_modules
+.next
+out
+build
+data
+public/uploads/*
+!public/uploads/.gitkeep
+.git
+.env*
+npm-debug.log*

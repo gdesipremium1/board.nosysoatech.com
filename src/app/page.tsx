@@ -1884,6 +1884,11 @@ export default function Home() {
               )}
             </div>
             <span>{me.username}</span>
+            {(me.role === "admin" || me.role === "manager") && (
+              <Link className="tab" href="/prospection">
+                Prospection
+              </Link>
+            )}
             {me.role === "admin" && (
               <Link className="tab" href="/users">
                 Utilisateurs

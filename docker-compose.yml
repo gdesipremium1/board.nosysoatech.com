@@ -1,0 +1,23 @@
+# Un seul service : l'app Next.js n'a pas de base de données, le board et
+# les comptes utilisateurs sont stockés dans des fichiers JSON (src/lib/store.ts,
+# src/lib/auth.ts). ./data et ./public/uploads sont montés en bind mount pour
+# que ces fichiers survivent à un rebuild/recreate du conteneur.
+services:
+  app:
+    build: .
+    ports: ["${BOARD_PORT:-3000}:3000"]
+    volumes:
+      - ./data:/app/data
+      - ./public/uploads:/app/public/uploads
+    environment:
+      # Compte admin créé automatiquement au premier démarrage si data/users.json
+      # n'existe pas encore (voir src/lib/auth.ts::readUsers). Sans ces deux
+      # variables, un mot de passe aléatoire est généré et loggé une seule fois
+      # (docker compose logs app).
+      BOOTSTRAP_ADMIN_USER: "${BOOTSTRAP_ADMIN_USER:-admin}"
+      BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-}"
+      # Clé d'automatisation de l'API prospection (Authorization: Bearer ...),
+      # 16 caractères minimum. Vide = API accessible uniquement via la session
+      # (admin/manager). Voir docs/PROSPECTION-API.md.
+      PROSPECTION_API_KEY: "${PROSPECTION_API_KEY:-}"
+    restart: unless-stopped

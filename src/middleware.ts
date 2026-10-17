@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { hasValidApiKey } from "@/lib/prospectionAuth";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,12 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/uploads/") ||
     pathname.startsWith("/_next/")
   ) {
+    return NextResponse.next();
+  }
+
+  // Automation (API key) only ever reaches the prospection API; the route
+  // handlers re-check the key themselves.
+  if (pathname.startsWith("/api/prospection/") && hasValidApiKey(request)) {
     return NextResponse.next();
   }
 
@@ -32,6 +39,12 @@ export async function middleware(request: NextRequest) {
   // candidates) and a narrow write (granting a project to someone) for the
   // per-project "participants" panel on the board itself; each route
   // handler enforces its own, more specific rule per HTTP verb.
+  if (pathname === "/prospection" && session.role !== "admin" && session.role !== "manager") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
+
   if (pathname === "/users" && session.role !== "admin") {
     const url = request.nextUrl.clone();
     url.pathname = "/";
