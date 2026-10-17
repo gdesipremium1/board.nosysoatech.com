@@ -7,11 +7,21 @@ import {
   EVENT_LABELS,
   STAGE_LABELS,
   STAGES,
+  dueReminders,
+  notificationCount,
   type EventType,
   type Prospect,
   type ProspectEvent,
   type Stage,
 } from "@/lib/prospectionShared";
+
+// Default for a new reminder: tomorrow 9:00 local, formatted for <input type="datetime-local">.
+function defaultReminderInput(): string {
+  const d = new Date(Date.now() + 24 * 3600 * 1000);
+  d.setHours(9, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 type Me = { userId: string; username: string; role: string; avatarUrl?: string };
 type View = "pipeline" | "table" | "stats";
@@ -41,6 +51,8 @@ const EVENT_ICONS: Partial<Record<EventType, string>> = {
   won: "★",
   lost: "–",
   note: "•",
+  reminder_set: "🔔",
+  reminder_done: "✓",
 };
 
 function fmtDate(iso?: string, withTime = false): string {
@@ -158,6 +170,19 @@ export default function ProspectionPage() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [note, setNote] = useState("");
+  const [bellOpen, setBellOpen] = useState(false);
+  const bellRef = useRef<HTMLDivElement>(null);
+  const [reminderAt, setReminderAt] = useState(defaultReminderInput);
+  const [reminderNote, setReminderNote] = useState("");
+
+  useEffect(() => {
+    if (!bellOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!bellRef.current?.contains(e.target as Node)) setBellOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [bellOpen]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [sortKey, setSortKey] = useState<"name" | "score" | "stage" | "lastContactAt" | "nextFollowUpAt">("score");
@@ -364,6 +389,22 @@ export default function ProspectionPage() {
     return arr;
   }, [filtered, sortKey]);
 
+  // Everything that "rings" right now: reminders whose date is reached and
+  // overdue follow-ups, newest first. Drives the bell and the card badges.
+  const notifications = useMemo(() => {
+    const now = Date.now();
+    const list: { key: string; prospect: Prospect; label: string; at: string }[] = [];
+    for (const p of prospects) {
+      if (p.archived) continue;
+      for (const r of dueReminders(p, now)) {
+        list.push({ key: r.id, prospect: p, label: `Rappel : ${r.note || "sans note"}`, at: r.at });
+      }
+      if (isFollowUpDue(p)) list.push({ key: `${p.id}-fu`, prospect: p, label: "Relance due", at: p.nextFollowUpAt! });
+    }
+    return list.sort((a, b) => b.at.localeCompare(a.at));
+  }, [prospects]);
+  const totalNotifications = notifications.length;
+
   function badges(p: Prospect) {
     const evs = eventsByProspect.get(p.id) ?? [];
     return (
@@ -389,6 +430,41 @@ export default function ProspectionPage() {
         <div className="crumb">
           <span className="crumb-sep">›</span>
           <span className="crumb-name">Prospection</span>
+        </div>
+        <div className="px-bell-wrap" ref={bellRef}>
+          <button
+            type="button"
+            className={"px-bell" + (totalNotifications ? " ringing" : "")}
+            onClick={() => setBellOpen((v) => !v)}
+            aria-label={`${totalNotifications} notification(s)`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 10a6 6 0 1 1 12 0c0 4 1.5 5.5 2 6H4c.5-.5 2-2 2-6Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+              <path d="M10 19a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+            {totalNotifications > 0 && <span className="notif-badge">{totalNotifications > 99 ? "99+" : totalNotifications}</span>}
+          </button>
+          {bellOpen && (
+            <div className="px-bell-panel">
+              <div className="px-bell-head">Notifications</div>
+              {notifications.length === 0 && <p className="px-bell-empty">Rien à traiter pour l&apos;instant.</p>}
+              {notifications.map((n) => (
+                <button
+                  key={n.key}
+                  type="button"
+                  className="px-bell-item"
+                  onClick={() => {
+                    openProspect(n.prospect.id);
+                    setBellOpen(false);
+                  }}
+                >
+                  <b>{n.prospect.name}</b>
+                  <span>{n.label}</span>
+                  <small>{fmtDate(n.at, true)}</small>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {me && <AppMenu current="prospection" me={me} />}
       </header>
@@ -482,6 +558,9 @@ export default function ProspectionPage() {
                       className={"px-card" + (p.id === selectedId ? " selected" : "")}
                       onClick={() => openProspect(p.id)}
                     >
+                      {notificationCount(p) > 0 && (
+                        <span className="notif-badge card" title="Notification(s) à traiter">{notificationCount(p)}</span>
+                      )}
                       <b>{p.name}</b>
                       <small>{[p.city, p.headcount, p.score !== undefined ? `score ${p.score}` : ""].filter(Boolean).join(" · ")}</small>
                       {p.stage === "brouillon" && (() => {
@@ -518,7 +597,10 @@ export default function ProspectionPage() {
               <tbody>
                 {sorted.map((p) => (
                   <tr key={p.id} onClick={() => openProspect(p.id)} className={p.id === selectedId ? "selected" : ""}>
-                    <td><b>{p.name}</b></td>
+                    <td>
+                      <b>{p.name}</b>
+                      {notificationCount(p) > 0 && <span className="notif-badge inline">{notificationCount(p)}</span>}
+                    </td>
                     <td>{STAGE_LABELS[p.stage]}</td>
                     <td>{p.tier ?? ""}</td>
                     <td>{p.score ?? ""}</td>
@@ -638,6 +720,54 @@ export default function ProspectionPage() {
                 )}
               </div>
 
+              <div className="px-reminders">
+                <h3 className="px-h3">
+                  Rappels
+                  {dueReminders(selected).length > 0 && <span className="notif-badge inline">{dueReminders(selected).length}</span>}
+                </h3>
+                {(selected.reminders ?? []).length === 0 && <p className="px-reminder-empty">Aucun rappel programmé.</p>}
+                {[...(selected.reminders ?? [])]
+                  .sort((a, b) => Number(a.done) - Number(b.done) || a.at.localeCompare(b.at))
+                  .map((r) => {
+                    const due = !r.done && new Date(r.at).getTime() <= Date.now();
+                    return (
+                      <div key={r.id} className={"px-reminder" + (r.done ? " done" : due ? " due" : "")}>
+                        <span className="px-reminder-state">{r.done ? "✓ Traité" : due ? "🔔 À traiter" : "◷ À venir"}</span>
+                        <span className="px-reminder-date">{fmtDate(r.at, true)}</span>
+                        <span className="px-reminder-note">{r.note || "Sans note"}</span>
+                        {!r.done && (
+                          <button
+                            type="button"
+                            className="tab"
+                            disabled={busy}
+                            onClick={() => postEvent(selected.id, { type: "reminder_done", reminderId: r.id, note: r.note }, "Rappel marqué comme traité.")}
+                          >
+                            Traité
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                <form
+                  className="px-reminder-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!reminderAt) return;
+                    postEvent(
+                      selected.id,
+                      { type: "reminder_set", dueAt: new Date(reminderAt).toISOString(), note: reminderNote.trim() || undefined },
+                      "Rappel programmé : la notification s'activera à la date choisie."
+                    );
+                    setReminderNote("");
+                    setReminderAt(defaultReminderInput());
+                  }}
+                >
+                  <input type="datetime-local" value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} required aria-label="Date du rappel" />
+                  <input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} placeholder="Note (ex. relancer si pas de réponse)" aria-label="Note du rappel" />
+                  <button type="submit" className="px-primary" disabled={busy}>Programmer</button>
+                </form>
+              </div>
+
               <dl className="px-info">
                 {selected.decisionMaker && (<><dt>Décideur</dt><dd>{selected.decisionMaker}{selected.decisionRole ? `, ${selected.decisionRole}` : ""}</dd></>)}
                 {selected.decisionEmail && (<><dt>Email décideur</dt><dd><a href={`mailto:${selected.decisionEmail}`}>{selected.decisionEmail}</a></dd></>)}
@@ -704,6 +834,7 @@ export default function ProspectionPage() {
                       <b>{EVENT_LABELS[e.type]}</b>
                       {e.stage && e.type === "stage_changed" && <> · {STAGE_LABELS[e.stage]}</>}
                       {e.sentiment && <> · {e.sentiment}</>}
+                      {e.dueAt && <> · pour le {fmtDate(e.dueAt, true)}</>}
                       {e.subject && <div className="px-ev-subject">{e.subject}</div>}
                       {e.note && <div className="px-ev-note">{e.note}</div>}
                       {e.body && e.type !== "draft_created" && e.type !== "draft_updated" && (

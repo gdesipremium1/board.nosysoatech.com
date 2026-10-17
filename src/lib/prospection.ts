@@ -17,6 +17,7 @@ import {
   type EventType,
   type Prospect,
   type ProspectEvent,
+  type Reminder,
   type Stage,
 } from "./prospectionShared";
 
@@ -176,7 +177,29 @@ function applyEventToProspect(p: Prospect, e: ProspectEvent, history: ProspectEv
     case "restored":
       p.archived = false;
       break;
+    case "reminder_set":
+      if (e.dueAt) {
+        p.reminders = [...(p.reminders ?? []), { id: e.reminderId ?? e.id, at: e.dueAt, note: e.note, done: false }];
+      }
+      break;
+    case "reminder_done":
+      p.reminders = (p.reminders ?? []).map((r) => (r.id === e.reminderId ? { ...r, done: true, doneAt: e.at } : r));
+      break;
   }
+}
+
+function cleanReminders(v: unknown): Reminder[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: Reminder[] = [];
+  for (const raw of v.slice(0, 100)) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const id = str(r.id, 100);
+    const at = isoDate(r.at);
+    if (!id || !at) continue;
+    out.push({ id, at, note: str(r.note, 1000), done: r.done === true, doneAt: isoDate(r.doneAt) });
+  }
+  return out;
 }
 
 // Full restore of an export (GET /api/prospection/export?format=json), e.g.
@@ -223,6 +246,7 @@ export async function importFull(
     };
     applyFields(p, input);
     p.lastContactAt = isoDate(input.lastContactAt);
+    p.reminders = cleanReminders(input.reminders);
     prospects.push(p);
     prospectIds.add(id);
     addedP++;
@@ -257,6 +281,8 @@ export async function importFull(
       sentiment: sentiment && ["positive", "neutre", "negative"].includes(sentiment) ? sentiment : undefined,
       stage: stage && STAGES.includes(stage) ? stage : undefined,
       note: str(input.note, 5000),
+      dueAt: isoDate(input.dueAt),
+      reminderId: str(input.reminderId, 100),
     });
     eventIds.add(id);
     addedE++;
@@ -353,8 +379,14 @@ export async function addEvent(
     sentiment: sentiment && ["positive", "neutre", "negative"].includes(sentiment) ? sentiment : undefined,
     stage: stage && STAGES.includes(stage) ? stage : undefined,
     note: str(input.note, 5000),
+    dueAt: isoDate(input.dueAt),
+    reminderId: str(input.reminderId, 100),
   });
   if (type === "stage_changed" && !event.stage) throw new Error("Étape cible manquante.");
+  if (type === "reminder_set" && !event.dueAt) throw new Error("Date du rappel manquante.");
+  if (type === "reminder_done" && !(p.reminders ?? []).some((r) => r.id === event.reminderId)) {
+    throw new Error("Rappel introuvable.");
+  }
 
   const events = await listEvents();
   applyEventToProspect(p, event, events.filter((e) => e.prospectId === prospectId));
@@ -374,7 +406,7 @@ const PROSPECT_COLUMNS: (keyof Prospect)[] = [
 ];
 const EVENT_COLUMNS: (keyof ProspectEvent)[] = [
   "id", "prospectId", "type", "at", "actor", "channel", "subject", "body", "gmailDraftId", "gmailMessageId",
-  "gmailThreadId", "sentiment", "stage", "note",
+  "gmailThreadId", "sentiment", "stage", "note", "dueAt", "reminderId",
 ];
 
 function csvCell(v: unknown): string {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PRESET_COLORS } from "@/lib/colors";
+import { notificationCount, type Prospect } from "@/lib/prospectionShared";
 
 // Header menu shared by the secondary pages (/projets, /prospection). The
 // board itself (src/app/page.tsx) has a richer version of the same menu,
@@ -20,6 +21,7 @@ function avatarColor(username: string): string {
 export default function AppMenu({ current, me, trashCount }: { current: Current; me: Me; trashCount?: number }) {
   const [open, setOpen] = useState(false);
   const [prospectCount, setProspectCount] = useState<number | null>(null);
+  const [dueCount, setDueCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const canManage = me.role === "admin" || me.role === "manager";
 
@@ -33,14 +35,17 @@ export default function AppMenu({ current, me, trashCount }: { current: Current;
   }, [open]);
 
   useEffect(() => {
-    if (!open || !canManage) return;
+    if (!canManage) return;
     fetch("/api/prospection/prospects")
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
-        if (json) setProspectCount(json.prospects.filter((p: { archived?: boolean }) => !p.archived).length);
+        if (!json) return;
+        const prospects = json.prospects as Prospect[];
+        setProspectCount(prospects.filter((p) => !p.archived).length);
+        setDueCount(prospects.reduce((n, p) => n + notificationCount(p), 0));
       })
       .catch(() => undefined);
-  }, [open, canManage]);
+  }, [canManage]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -63,6 +68,7 @@ export default function AppMenu({ current, me, trashCount }: { current: Current;
           {me.avatarUrl ? <img src={me.avatarUrl} alt="" /> : me.username.slice(0, 2).toUpperCase()}
         </span>
         <span className="menu-trigger-name">{me.username}</span>
+        {dueCount > 0 && <span className="notif-badge trigger">{dueCount}</span>}
         <span className="menu-chevron" aria-hidden="true">▾</span>
       </button>
       {open && (
@@ -76,6 +82,7 @@ export default function AppMenu({ current, me, trashCount }: { current: Current;
             <Link className={"mm-item" + (current === "prospection" ? " mm-current" : "")} href="/prospection">
               <span className="mm-icon" aria-hidden="true">◎</span>
               Prospects
+              {dueCount > 0 && <span className="notif-badge inline">{dueCount}</span>}
               {prospectCount !== null && <span className="mm-meta">{prospectCount}</span>}
             </Link>
           )}

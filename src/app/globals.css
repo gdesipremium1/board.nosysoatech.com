@@ -311,6 +311,36 @@ header {
   color: var(--ink-soft);
 }
 
+/* ---- notification badge (red counter, Facebook style) ---- */
+.notif-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #e0393e;
+  color: #fff;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.notif-badge.inline {
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+.notif-badge.trigger {
+  margin-left: -2px;
+}
+.notif-badge.card {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+}
+
 /* ---- header: breadcrumb + single dropdown menu ---- */
 .crumb {
   display: flex;

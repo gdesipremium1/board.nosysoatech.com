@@ -7,6 +7,7 @@ import type { Attachment, BoardData, Card, CardLang, Column, Comment, Label, Pro
 import RichTextEditor from "@/components/RichTextEditor";
 import ClampBlock from "@/components/ClampBlock";
 import { PRESET_COLORS } from "@/lib/colors";
+import { notificationCount, type Prospect } from "@/lib/prospectionShared";
 
 function labelPillStyle(color: string): React.CSSProperties {
   return { background: `color-mix(in srgb, ${color} 20%, transparent)`, color };
@@ -287,6 +288,7 @@ export default function Home() {
   // default (the project list now lives on /projets).
   const [profileOpen, setProfileOpen] = useState(false);
   const [prospectCount, setProspectCount] = useState<number | null>(null);
+  const [dueCount, setDueCount] = useState(0);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState("");
   const [collapsedCommentIds, setCollapsedCommentIds] = useState<Set<string>>(new Set());
@@ -412,17 +414,20 @@ export default function Home() {
     }
   }, [espaceOpen]);
 
-  // Live prospect count next to "Prospects" in the menu (admin/manager only,
-  // fetched when the menu opens so the board itself never waits on it).
+  // Prospect count and notification badge (due reminders, overdue follow-ups)
+  // for admin/manager, fetched once in the background so the board never waits on it.
   useEffect(() => {
-    if (!espaceOpen || (me?.role !== "admin" && me?.role !== "manager")) return;
+    if (me?.role !== "admin" && me?.role !== "manager") return;
     fetch("/api/prospection/prospects")
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
-        if (json) setProspectCount(json.prospects.filter((p: { archived?: boolean }) => !p.archived).length);
+        if (!json) return;
+        const prospects = json.prospects as Prospect[];
+        setProspectCount(prospects.filter((p) => !p.archived).length);
+        setDueCount(prospects.reduce((n, p) => n + notificationCount(p), 0));
       })
       .catch(() => undefined);
-  }, [espaceOpen, me?.role]);
+  }, [me?.role]);
 
   // Same pattern for the participants panel, plus a lazy fetch of the user
   // list the first time it's opened (admin/manager only, see GET
@@ -1704,6 +1709,7 @@ export default function Home() {
                 {me.avatarUrl ? <img src={me.avatarUrl} alt="" /> : initials(me.username)}
               </span>
               <span className="menu-trigger-name">{me.username}</span>
+              {dueCount > 0 && <span className="notif-badge trigger">{dueCount}</span>}
               <span className="menu-chevron" aria-hidden="true">▾</span>
             </button>
 
@@ -1829,6 +1835,7 @@ export default function Home() {
                   <Link className="mm-item" href="/prospection">
                     <span className="mm-icon" aria-hidden="true">◎</span>
                     Prospects
+                    {dueCount > 0 && <span className="notif-badge inline">{dueCount}</span>}
                     {prospectCount !== null && <span className="mm-meta">{prospectCount}</span>}
                   </Link>
                 )}

@@ -33,6 +33,8 @@ export const EVENT_TYPES = [
   "stage_changed",
   "archived",
   "restored",
+  "reminder_set",
+  "reminder_done",
   "note",
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -55,6 +57,8 @@ export const EVENT_LABELS: Record<EventType, string> = {
   stage_changed: "Étape changée",
   archived: "Archivé",
   restored: "Restauré",
+  reminder_set: "Rappel programmé",
+  reminder_done: "Rappel traité",
   note: "Note",
 };
 
@@ -89,6 +93,9 @@ export type Prospect = {
   // Extra imported columns are kept as-is rather than dropped, so an
   // export round-trips whatever the source spreadsheet carried.
   custom: Record<string, string>;
+  // Dated reminders: a reminder only "rings" (counts as a notification) once
+  // its date is reached and until it is marked done.
+  reminders?: Reminder[];
   createdAt: string;
   updatedAt: string;
 };
@@ -108,5 +115,30 @@ export type ProspectEvent = {
   sentiment?: "positive" | "neutre" | "negative";
   stage?: Stage;
   note?: string;
+  // reminder_set: when it should ring; reminder_set / reminder_done: which one.
+  dueAt?: string;
+  reminderId?: string;
 };
 
+export type Reminder = {
+  id: string;
+  at: string;
+  note?: string;
+  done: boolean;
+  doneAt?: string;
+};
+
+export function dueReminders(p: Prospect, now = Date.now()): Reminder[] {
+  return (p.reminders ?? []).filter((r) => !r.done && new Date(r.at).getTime() <= now);
+}
+
+// Notification count shown as a red badge: reminders whose date is reached,
+// plus one when the planned follow-up date of a contacted prospect is past.
+export function notificationCount(p: Prospect, now = Date.now()): number {
+  if (p.archived) return 0;
+  const followUpDue =
+    (p.stage === "envoye" || p.stage === "relance") &&
+    !!p.nextFollowUpAt &&
+    new Date(p.nextFollowUpAt).getTime() <= now;
+  return dueReminders(p, now).length + (followUpDue ? 1 : 0);
+}
