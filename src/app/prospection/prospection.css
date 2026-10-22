@@ -36,6 +36,64 @@
   border-color: var(--amber);
   background: var(--amber-soft);
 }
+/* ---- strategy filter chips + pills ---- */
+.px-strategies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.px-strat-chip {
+  font-family: inherit;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.px-strat-chip span {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.px-strat-chip:hover {
+  border-color: var(--ink-faint);
+}
+.px-strat-chip.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.px-strat-chip.active span {
+  color: var(--paper);
+}
+.px-pill.strat-esn {
+  background: var(--blue-soft);
+  border-color: transparent;
+  color: var(--blue);
+}
+.px-pill.strat-client_direct {
+  background: var(--good-soft);
+  border-color: transparent;
+  color: var(--good);
+}
+.px-pill.strat-local {
+  background: var(--amber-soft);
+  border-color: transparent;
+  color: var(--amber);
+}
+.px-pill.strat-agence,
+.px-pill.strat-partenariat {
+  background: var(--amber-soft);
+  border-color: transparent;
+  color: var(--amber);
+}
+
 .px-toolbar {
   display: flex;
   flex-wrap: wrap;

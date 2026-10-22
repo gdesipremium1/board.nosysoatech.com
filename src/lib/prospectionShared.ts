@@ -15,6 +15,37 @@ export const STAGE_LABELS: Record<Stage, string> = {
   perdu: "Perdu",
 };
 
+// Prospecting strategy, i.e. why we target this prospect. "esn" is the
+// original campaign (IT services firms buying subcontracting / régie);
+// "client_direct" is a business whose site is live and profitable, offered
+// audits and fixes directly; "local" groups opportunities around Fort-Dauphin.
+export const STRATEGIES = ["esn", "client_direct", "agence", "local", "candidature", "partenariat", "autre"] as const;
+export type Strategy = (typeof STRATEGIES)[number];
+
+export const STRATEGY_LABELS: Record<Strategy, string> = {
+  esn: "ESN",
+  client_direct: "Client direct",
+  agence: "Agence web",
+  local: "Local (Madagascar)",
+  candidature: "Candidature",
+  partenariat: "Partenariat",
+  autre: "Autre",
+};
+
+// Accepts an id ("client_direct") or a label as typed in a spreadsheet
+// ("Client direct", "client-direct", "ESN"...).
+export function parseStrategy(v: unknown): Strategy | undefined {
+  if (typeof v !== "string") return undefined;
+  const k = v
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\s-]+/g, "_");
+  if ((STRATEGIES as readonly string[]).includes(k)) return k as Strategy;
+  return STRATEGIES.find((s) => STRATEGY_LABELS[s].toLowerCase().replace(/\s+/g, "_") === k);
+}
+
 export const EVENT_TYPES = [
   "prospect_created",
   "prospect_updated",
@@ -84,6 +115,7 @@ export type Prospect = {
   decisionRole?: string;
   decisionEmail?: string;
   source?: string;
+  strategy?: Strategy;
   tags: string[];
   stage: Stage;
   nextAction?: string;

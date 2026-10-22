@@ -14,6 +14,25 @@ envois, des relances et des réponses. Réservé aux rôles **admin** et
 Les deux fichiers sont dans `data/`, donc persistés par le volume Docker et
 exclus de git, comme `board.json`.
 
+## Stratégie de prospection
+
+Champ `strategy` d'une fiche, filtrable dans l'interface (puces au-dessus
+de la barre d'outils) et présent dans les exports CSV / JSON :
+
+| Valeur | Libellé | Usage |
+|---|---|---|
+| `esn` | ESN | Sociétés de services : sous-traitance et régie |
+| `client_direct` | Client direct | Entreprise dont le site est en production et rentable : audit et correctifs proposés en direct |
+| `agence` | Agence web | Agences web ou marketing : marque blanche |
+| `local` | Local (Madagascar) | Opportunités autour de Fort-Dauphin |
+| `candidature` | Candidature | Réponse à une offre d'emploi |
+| `partenariat` | Partenariat | Apporteurs d'affaires, partenaires complémentaires |
+| `autre` | Autre | |
+
+L'API accepte la valeur ou le libellé (`"Client direct"`, `"client-direct"`).
+Une valeur inconnue efface le champ (fiche « non classée »). À l'import CSV,
+les colonnes `strategy`, `stratégie` ou `strategie` sont reconnues.
+
 ## Authentification
 
 1. **Session** (interface web) : cookie `board_session`, rôle admin ou manager.

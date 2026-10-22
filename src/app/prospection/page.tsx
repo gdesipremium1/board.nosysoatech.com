@@ -7,12 +7,15 @@ import {
   EVENT_LABELS,
   STAGE_LABELS,
   STAGES,
+  STRATEGIES,
+  STRATEGY_LABELS,
   dueReminders,
   notificationCount,
   type EventType,
   type Prospect,
   type ProspectEvent,
   type Stage,
+  type Strategy,
 } from "@/lib/prospectionShared";
 
 // Default for a new reminder: tomorrow 9:00 local, formatted for <input type="datetime-local">.
@@ -120,14 +123,14 @@ function sendAuthorized(events: ProspectEvent[]): boolean {
 }
 
 const EMPTY_FORM = {
-  name: "", city: "", headcount: "", tier: "", score: "", website: "", emails: "", phones: "",
+  name: "", strategy: "", city: "", headcount: "", tier: "", score: "", website: "", emails: "", phones: "",
   linkedin: "", decisionMaker: "", decisionRole: "", decisionEmail: "", source: "", tags: "", nextAction: "",
 };
 type FormState = typeof EMPTY_FORM;
 
 function toForm(p: Prospect): FormState {
   return {
-    name: p.name, city: p.city ?? "", headcount: p.headcount ?? "", tier: p.tier ?? "",
+    name: p.name, strategy: p.strategy ?? "", city: p.city ?? "", headcount: p.headcount ?? "", tier: p.tier ?? "",
     score: p.score?.toString() ?? "", website: p.website ?? "", emails: p.emails.join("; "),
     phones: p.phones.join("; "), linkedin: p.linkedin ?? "", decisionMaker: p.decisionMaker ?? "",
     decisionRole: p.decisionRole ?? "", decisionEmail: p.decisionEmail ?? "", source: p.source ?? "",
@@ -137,6 +140,7 @@ function toForm(p: Prospect): FormState {
 
 const FORM_FIELDS: { key: keyof FormState; label: string; wide?: boolean }[] = [
   { key: "name", label: "Nom", wide: true },
+  { key: "strategy", label: "Stratégie" },
   { key: "city", label: "Ville" },
   { key: "headcount", label: "Effectif" },
   { key: "tier", label: "Palier (A/B/C)" },
@@ -162,6 +166,8 @@ export default function ProspectionPage() {
   const [view, setView] = useState<View>("pipeline");
   const [query, setQuery] = useState("");
   const [tier, setTier] = useState("");
+  // "" = toutes, "none" = prospects pas encore classés.
+  const [strategy, setStrategy] = useState<Strategy | "" | "none">("");
   const [stageFilter, setStageFilter] = useState("");
   const [source, setSource] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -232,6 +238,7 @@ export default function ProspectionPage() {
     return prospects.filter((p) => {
       if (!showArchived && p.archived) return false;
       if (tier && p.tier !== tier) return false;
+      if (strategy === "none" ? !!p.strategy : strategy && p.strategy !== strategy) return false;
       if (stageFilter && p.stage !== stageFilter) return false;
       if (source && p.source !== source) return false;
       if (!q) return true;
@@ -239,7 +246,16 @@ export default function ProspectionPage() {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [prospects, query, tier, stageFilter, source, showArchived]);
+  }, [prospects, query, tier, strategy, stageFilter, source, showArchived]);
+
+  // Counts for the strategy chips (live prospects only, other filters ignored
+  // so each chip always tells how big that segment is).
+  const strategyCounts = useMemo(() => {
+    const live = prospects.filter((p) => showArchived || !p.archived);
+    const counts = new Map<string, number>([["", live.length]]);
+    for (const p of live) counts.set(p.strategy ?? "none", (counts.get(p.strategy ?? "none") ?? 0) + 1);
+    return counts;
+  }, [prospects, showArchived]);
 
   const stats = useMemo(() => {
     const live = prospects.filter((p) => !p.archived);
@@ -409,6 +425,7 @@ export default function ProspectionPage() {
     const evs = eventsByProspect.get(p.id) ?? [];
     return (
       <div className="px-badges">
+        {p.strategy && <span className={`px-pill strat strat-${p.strategy}`}>{STRATEGY_LABELS[p.strategy]}</span>}
         {p.tier && <span className="px-pill">Palier {p.tier}</span>}
         {p.stage === "brouillon" && (sendAuthorized(evs) ? <span className="px-pill good">Envoi autorisé</span> : <span className="px-pill blue">À valider</span>)}
         {isFollowUpDue(p) && <span className="px-pill amber">Relance due</span>}
@@ -477,6 +494,22 @@ export default function ProspectionPage() {
           <div className="px-kpi"><span>Taux de réponse</span><b>{stats.replyRate} %</b></div>
           <div className="px-kpi"><span>RDV / gagnés</span><b>{stats.meetings}</b></div>
           <div className={"px-kpi" + (stats.due ? " warn" : "")}><span>Relances dues</span><b>{stats.due}</b></div>
+        </div>
+
+        <div className="px-strategies" role="group" aria-label="Stratégie">
+          {(["", ...STRATEGIES, "none"] as const)
+            .filter((s) => s === "" || s === strategy || (strategyCounts.get(s) ?? 0) > 0)
+            .map((s) => (
+              <button
+                key={s || "all"}
+                type="button"
+                className={"px-strat-chip" + (strategy === s ? " active" : "") + (s && s !== "none" ? ` strat-${s}` : "")}
+                onClick={() => setStrategy(s)}
+              >
+                {s === "" ? "Toutes stratégies" : s === "none" ? "Non classés" : STRATEGY_LABELS[s]}
+                <span>{strategyCounts.get(s) ?? 0}</span>
+              </button>
+            ))}
         </div>
 
         <div className="px-toolbar">
@@ -585,6 +618,7 @@ export default function ProspectionPage() {
                 <tr>
                   <th onClick={() => setSortKey("name")}>Nom</th>
                   <th onClick={() => setSortKey("stage")}>Étape</th>
+                  <th>Stratégie</th>
                   <th>Palier</th>
                   <th onClick={() => setSortKey("score")}>Score</th>
                   <th>Ville</th>
@@ -602,6 +636,7 @@ export default function ProspectionPage() {
                       {notificationCount(p) > 0 && <span className="notif-badge inline">{notificationCount(p)}</span>}
                     </td>
                     <td>{STAGE_LABELS[p.stage]}</td>
+                    <td>{p.strategy ? STRATEGY_LABELS[p.strategy] : ""}</td>
                     <td>{p.tier ?? ""}</td>
                     <td>{p.score ?? ""}</td>
                     <td>{p.city ?? ""}</td>
@@ -632,6 +667,22 @@ export default function ProspectionPage() {
                   <b>{value}</b>
                 </div>
               ))}
+            </div>
+            <div className="px-stat-block">
+              <h3>Réponse par stratégie</h3>
+              {STRATEGIES.filter((s) => prospects.some((p) => p.strategy === s)).map((s) => {
+                const ids = prospects.filter((p) => p.strategy === s).map((p) => p.id);
+                const sent = ids.filter((id) => stats.contactedSet.has(id)).length;
+                const rep = ids.filter((id) => stats.contactedSet.has(id) && stats.repliedSet.has(id)).length;
+                const rate = sent ? Math.round((rep / sent) * 100) : 0;
+                return (
+                  <div className="px-bar" key={s}>
+                    <span>{STRATEGY_LABELS[s]}</span>
+                    <div><i style={{ width: `${rate}%` }} /></div>
+                    <b>{sent ? `${rate} % (${rep}/${sent})` : `— (${ids.length})`}</b>
+                  </div>
+                );
+              })}
             </div>
             <div className="px-stat-block">
               <h3>Réponse par palier</h3>
@@ -687,7 +738,14 @@ export default function ProspectionPage() {
               {FORM_FIELDS.map((f) => (
                 <label key={f.key} className={"field" + (f.wide ? " wide" : "")}>
                   <span>{f.label}</span>
-                  <input value={form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} required={f.key === "name"} />
+                  {f.key === "strategy" ? (
+                    <select value={form.strategy} onChange={(e) => setForm({ ...form, strategy: e.target.value })}>
+                      <option value="">Non classé</option>
+                      {STRATEGIES.map((s) => <option key={s} value={s}>{STRATEGY_LABELS[s]}</option>)}
+                    </select>
+                  ) : (
+                    <input value={form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} required={f.key === "name"} />
+                  )}
                 </label>
               ))}
               <div className="px-actions wide">
@@ -776,6 +834,7 @@ export default function ProspectionPage() {
                 {selected.website && (<><dt>Site</dt><dd><a href={selected.website} target="_blank" rel="noopener">{selected.website.replace(/^https?:\/\//, "")}</a></dd></>)}
                 {selected.linkedin && (<><dt>LinkedIn</dt><dd><a href={selected.linkedin} target="_blank" rel="noopener">{selected.linkedin.replace(/^https?:\/\/(www\.)?linkedin\.com/, "")}</a></dd></>)}
                 {selected.score !== undefined && (<><dt>Score</dt><dd>{selected.score} / 100{selected.tier ? ` · palier ${selected.tier}` : ""}</dd></>)}
+                <dt>Stratégie</dt><dd>{selected.strategy ? STRATEGY_LABELS[selected.strategy] : "Non classé"}</dd>
                 {selected.source && (<><dt>Source</dt><dd>{selected.source}</dd></>)}
                 {selected.nextAction && (<><dt>Prochaine action</dt><dd>{selected.nextAction}</dd></>)}
                 {Object.entries(selected.custom ?? {}).map(([k, v]) => (

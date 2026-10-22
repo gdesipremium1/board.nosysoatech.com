@@ -19,6 +19,7 @@ import {
   type ProspectEvent,
   type Reminder,
   type Stage,
+  parseStrategy,
 } from "./prospectionShared";
 
 export * from "./prospectionShared";
@@ -64,7 +65,7 @@ function isoDate(v: unknown): string | undefined {
 
 const EDITABLE_FIELDS = [
   "name", "siren", "legalForm", "city", "region", "headcount", "revenue", "score", "tier", "website",
-  "emails", "phones", "linkedin", "decisionMaker", "decisionRole", "decisionEmail", "source", "tags",
+  "emails", "phones", "linkedin", "decisionMaker", "decisionRole", "decisionEmail", "source", "strategy", "tags",
   "nextAction", "nextFollowUpAt", "custom",
 ] as const;
 
@@ -91,6 +92,9 @@ function applyFields(target: Prospect, input: Record<string, unknown>): void {
       }
       case "nextFollowUpAt":
         target.nextFollowUpAt = isoDate(v);
+        break;
+      case "strategy":
+        target.strategy = parseStrategy(v);
         break;
       case "custom":
         if (v && typeof v === "object") {
@@ -401,7 +405,7 @@ export async function addEvent(
 
 const PROSPECT_COLUMNS: (keyof Prospect)[] = [
   "id", "name", "siren", "legalForm", "city", "region", "headcount", "revenue", "score", "tier", "website",
-  "emails", "phones", "linkedin", "decisionMaker", "decisionRole", "decisionEmail", "source", "tags",
+  "emails", "phones", "linkedin", "decisionMaker", "decisionRole", "decisionEmail", "source", "strategy", "tags",
   "stage", "nextAction", "nextFollowUpAt", "lastContactAt", "archived", "createdAt", "updatedAt",
 ];
 const EVENT_COLUMNS: (keyof ProspectEvent)[] = [
@@ -486,6 +490,7 @@ const ALIASES: Record<string, string> = {
   fonction: "decisionRole", "poste décisionnaire": "decisionRole", decisionrole: "decisionRole",
   "email décideur (à enrichir)": "decisionEmail", "email décisionnaire": "decisionEmail", decisionemail: "decisionEmail",
   source: "source", tags: "tags", "prochaine action": "nextAction", nextaction: "nextAction",
+  strategy: "strategy", "stratégie": "strategy", strategie: "strategy",
 };
 
 export function rowsToProspectInputs(rows: Record<string, string>[]): Record<string, unknown>[] {
