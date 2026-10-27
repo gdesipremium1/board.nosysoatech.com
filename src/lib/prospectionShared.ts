@@ -19,13 +19,15 @@ export const STAGE_LABELS: Record<Stage, string> = {
 // original campaign (IT services firms buying subcontracting / régie);
 // "client_direct" is a business whose site is live and profitable, offered
 // audits and fixes directly; "local" groups opportunities around Fort-Dauphin.
-export const STRATEGIES = ["esn", "client_direct", "agence", "local", "candidature", "partenariat", "autre"] as const;
+export const STRATEGIES = ["esn", "client_direct", "agence", "lims_mes", "recruteur", "local", "candidature", "partenariat", "autre"] as const;
 export type Strategy = (typeof STRATEGIES)[number];
 
 export const STRATEGY_LABELS: Record<Strategy, string> = {
   esn: "ESN",
   client_direct: "Client direct",
   agence: "Agence web",
+  lims_mes: "LIMS / MES",
+  recruteur: "Recruteur",
   local: "Local (Madagascar)",
   candidature: "Candidature",
   partenariat: "Partenariat",
@@ -44,6 +46,51 @@ export function parseStrategy(v: unknown): Strategy | undefined {
     .replace(/[\s-]+/g, "_");
   if ((STRATEGIES as readonly string[]).includes(k)) return k as Strategy;
   return STRATEGIES.find((s) => STRATEGY_LABELS[s].toLowerCase().replace(/\s+/g, "_") === k);
+}
+
+// Prospecting country (ISO 3166-1 alpha-2). Free list rather than an enum so
+// a new market can be opened from the API without a deploy; labels cover the
+// ones in use, unknown codes are shown as-is.
+export const COUNTRY_LABELS: Record<string, string> = {
+  FR: "France",
+  BE: "Belgique",
+  CH: "Suisse",
+  LU: "Luxembourg",
+  CA: "Québec (Canada)",
+  MC: "Monaco",
+  MA: "Maroc",
+  TN: "Tunisie",
+  MG: "Madagascar",
+  MU: "Maurice",
+};
+
+const COUNTRY_ALIASES: Record<string, string> = {
+  france: "FR",
+  belgique: "BE",
+  belgium: "BE",
+  suisse: "CH",
+  switzerland: "CH",
+  luxembourg: "LU",
+  quebec: "CA",
+  canada: "CA",
+  monaco: "MC",
+  maroc: "MA",
+  tunisie: "TN",
+  madagascar: "MG",
+  maurice: "MU",
+};
+
+export function countryLabel(code?: string): string {
+  return code ? COUNTRY_LABELS[code] ?? code : "";
+}
+
+// Accepts an ISO code ("be") or a country name ("Belgique", "Québec").
+export function parseCountry(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  if (/^[A-Za-z]{2}$/.test(s)) return s.toUpperCase();
+  const k = s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s*\(.*\)$/, "");
+  return COUNTRY_ALIASES[k];
 }
 
 export const EVENT_TYPES = [
@@ -116,6 +163,7 @@ export type Prospect = {
   decisionEmail?: string;
   source?: string;
   strategy?: Strategy;
+  country?: string;
   tags: string[];
   stage: Stage;
   nextAction?: string;

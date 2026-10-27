@@ -24,6 +24,8 @@ de la barre d'outils) et présent dans les exports CSV / JSON :
 | `esn` | ESN | Sociétés de services : sous-traitance et régie |
 | `client_direct` | Client direct | Entreprise dont le site est en production et rentable : audit et correctifs proposés en direct |
 | `agence` | Agence web | Agences web ou marketing : marque blanche |
+| `lims_mes` | LIMS / MES | Intégrateurs et cabinets de validation LIMS, MES, historians |
+| `recruteur` | Recruteur | Cabinets de recrutement IT et plateformes de freelances |
 | `local` | Local (Madagascar) | Opportunités autour de Fort-Dauphin |
 | `candidature` | Candidature | Réponse à une offre d'emploi |
 | `partenariat` | Partenariat | Apporteurs d'affaires, partenaires complémentaires |
@@ -32,6 +34,13 @@ de la barre d'outils) et présent dans les exports CSV / JSON :
 L'API accepte la valeur ou le libellé (`"Client direct"`, `"client-direct"`).
 Une valeur inconnue efface le champ (fiche « non classée »). À l'import CSV,
 les colonnes `strategy`, `stratégie` ou `strategie` sont reconnues.
+
+## Pays
+
+Champ `country` (code ISO à deux lettres : `FR`, `BE`, `CH`, `LU`, `CA`, `MC`…),
+filtrable par puces dans l'interface. L'API accepte aussi le nom
+(`"Belgique"`, `"Québec"`). Une fiche sans pays est comptée comme `FR`
+(toutes les fiches antérieures étaient françaises). Colonnes CSV `country` ou `pays`.
 
 ## Authentification
 

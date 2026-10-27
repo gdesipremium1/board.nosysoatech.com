@@ -9,6 +9,7 @@ import {
   STAGES,
   STRATEGIES,
   STRATEGY_LABELS,
+  countryLabel,
   dueReminders,
   notificationCount,
   type EventType,
@@ -123,14 +124,14 @@ function sendAuthorized(events: ProspectEvent[]): boolean {
 }
 
 const EMPTY_FORM = {
-  name: "", strategy: "", city: "", headcount: "", tier: "", score: "", website: "", emails: "", phones: "",
+  name: "", strategy: "", country: "", city: "", headcount: "", tier: "", score: "", website: "", emails: "", phones: "",
   linkedin: "", decisionMaker: "", decisionRole: "", decisionEmail: "", source: "", tags: "", nextAction: "",
 };
 type FormState = typeof EMPTY_FORM;
 
 function toForm(p: Prospect): FormState {
   return {
-    name: p.name, strategy: p.strategy ?? "", city: p.city ?? "", headcount: p.headcount ?? "", tier: p.tier ?? "",
+    name: p.name, strategy: p.strategy ?? "", country: p.country ?? "", city: p.city ?? "", headcount: p.headcount ?? "", tier: p.tier ?? "",
     score: p.score?.toString() ?? "", website: p.website ?? "", emails: p.emails.join("; "),
     phones: p.phones.join("; "), linkedin: p.linkedin ?? "", decisionMaker: p.decisionMaker ?? "",
     decisionRole: p.decisionRole ?? "", decisionEmail: p.decisionEmail ?? "", source: p.source ?? "",
@@ -141,6 +142,7 @@ function toForm(p: Prospect): FormState {
 const FORM_FIELDS: { key: keyof FormState; label: string; wide?: boolean }[] = [
   { key: "name", label: "Nom", wide: true },
   { key: "strategy", label: "Stratégie" },
+  { key: "country", label: "Pays (code : FR, BE, CH, LU, CA, MC…)" },
   { key: "city", label: "Ville" },
   { key: "headcount", label: "Effectif" },
   { key: "tier", label: "Palier (A/B/C)" },
@@ -168,6 +170,7 @@ export default function ProspectionPage() {
   const [tier, setTier] = useState("");
   // "" = toutes, "none" = prospects pas encore classés.
   const [strategy, setStrategy] = useState<Strategy | "" | "none">("");
+  const [country, setCountry] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [source, setSource] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -239,6 +242,7 @@ export default function ProspectionPage() {
       if (!showArchived && p.archived) return false;
       if (tier && p.tier !== tier) return false;
       if (strategy === "none" ? !!p.strategy : strategy && p.strategy !== strategy) return false;
+      if (country && (p.country ?? "FR") !== country) return false;
       if (stageFilter && p.stage !== stageFilter) return false;
       if (source && p.source !== source) return false;
       if (!q) return true;
@@ -246,7 +250,7 @@ export default function ProspectionPage() {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [prospects, query, tier, strategy, stageFilter, source, showArchived]);
+  }, [prospects, query, tier, strategy, country, stageFilter, source, showArchived]);
 
   // Counts for the strategy chips (live prospects only, other filters ignored
   // so each chip always tells how big that segment is).
@@ -255,6 +259,15 @@ export default function ProspectionPage() {
     const counts = new Map<string, number>([["", live.length]]);
     for (const p of live) counts.set(p.strategy ?? "none", (counts.get(p.strategy ?? "none") ?? 0) + 1);
     return counts;
+  }, [prospects, showArchived]);
+
+  // Same idea per country. Prospects created before the field existed were
+  // all French, so a missing country counts as FR.
+  const countryCounts = useMemo(() => {
+    const live = prospects.filter((p) => showArchived || !p.archived);
+    const counts = new Map<string, number>();
+    for (const p of live) counts.set(p.country ?? "FR", (counts.get(p.country ?? "FR") ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [prospects, showArchived]);
 
   const stats = useMemo(() => {
@@ -425,6 +438,7 @@ export default function ProspectionPage() {
     const evs = eventsByProspect.get(p.id) ?? [];
     return (
       <div className="px-badges">
+        {p.country && p.country !== "FR" && <span className="px-pill">{p.country}</span>}
         {p.strategy && <span className={`px-pill strat strat-${p.strategy}`}>{STRATEGY_LABELS[p.strategy]}</span>}
         {p.tier && <span className="px-pill">Palier {p.tier}</span>}
         {p.stage === "brouillon" && (sendAuthorized(evs) ? <span className="px-pill good">Envoi autorisé</span> : <span className="px-pill blue">À valider</span>)}
@@ -495,6 +509,19 @@ export default function ProspectionPage() {
           <div className="px-kpi"><span>RDV / gagnés</span><b>{stats.meetings}</b></div>
           <div className={"px-kpi" + (stats.due ? " warn" : "")}><span>Relances dues</span><b>{stats.due}</b></div>
         </div>
+
+        {countryCounts.length > 1 && (
+          <div className="px-strategies" role="group" aria-label="Pays">
+            <button type="button" className={"px-strat-chip" + (country === "" ? " active" : "")} onClick={() => setCountry("")}>
+              Tous pays<span>{countryCounts.reduce((n, [, c]) => n + c, 0)}</span>
+            </button>
+            {countryCounts.map(([code, n]) => (
+              <button key={code} type="button" className={"px-strat-chip" + (country === code ? " active" : "")} onClick={() => setCountry(code)}>
+                {countryLabel(code)}<span>{n}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="px-strategies" role="group" aria-label="Stratégie">
           {(["", ...STRATEGIES, "none"] as const)
@@ -619,6 +646,7 @@ export default function ProspectionPage() {
                   <th onClick={() => setSortKey("name")}>Nom</th>
                   <th onClick={() => setSortKey("stage")}>Étape</th>
                   <th>Stratégie</th>
+                  <th>Pays</th>
                   <th>Palier</th>
                   <th onClick={() => setSortKey("score")}>Score</th>
                   <th>Ville</th>
@@ -637,6 +665,7 @@ export default function ProspectionPage() {
                     </td>
                     <td>{STAGE_LABELS[p.stage]}</td>
                     <td>{p.strategy ? STRATEGY_LABELS[p.strategy] : ""}</td>
+                    <td>{countryLabel(p.country ?? "FR")}</td>
                     <td>{p.tier ?? ""}</td>
                     <td>{p.score ?? ""}</td>
                     <td>{p.city ?? ""}</td>
@@ -835,6 +864,7 @@ export default function ProspectionPage() {
                 {selected.linkedin && (<><dt>LinkedIn</dt><dd><a href={selected.linkedin} target="_blank" rel="noopener">{selected.linkedin.replace(/^https?:\/\/(www\.)?linkedin\.com/, "")}</a></dd></>)}
                 {selected.score !== undefined && (<><dt>Score</dt><dd>{selected.score} / 100{selected.tier ? ` · palier ${selected.tier}` : ""}</dd></>)}
                 <dt>Stratégie</dt><dd>{selected.strategy ? STRATEGY_LABELS[selected.strategy] : "Non classé"}</dd>
+                <dt>Pays</dt><dd>{countryLabel(selected.country ?? "FR")}</dd>
                 {selected.source && (<><dt>Source</dt><dd>{selected.source}</dd></>)}
                 {selected.nextAction && (<><dt>Prochaine action</dt><dd>{selected.nextAction}</dd></>)}
                 {Object.entries(selected.custom ?? {}).map(([k, v]) => (

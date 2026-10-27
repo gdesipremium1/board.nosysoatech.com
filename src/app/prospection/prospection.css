@@ -87,6 +87,12 @@
   border-color: transparent;
   color: var(--amber);
 }
+.px-pill.strat-lims_mes,
+.px-pill.strat-recruteur {
+  background: var(--blue-soft);
+  border-color: transparent;
+  color: var(--ink);
+}
 .px-pill.strat-agence,
 .px-pill.strat-partenariat {
   background: var(--amber-soft);
