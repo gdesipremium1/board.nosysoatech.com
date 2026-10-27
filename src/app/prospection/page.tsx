@@ -438,7 +438,6 @@ export default function ProspectionPage() {
     const evs = eventsByProspect.get(p.id) ?? [];
     return (
       <div className="px-badges">
-        {p.country && p.country !== "FR" && <span className="px-pill">{p.country}</span>}
         {p.strategy && <span className={`px-pill strat strat-${p.strategy}`}>{STRATEGY_LABELS[p.strategy]}</span>}
         {p.tier && <span className="px-pill">Palier {p.tier}</span>}
         {p.stage === "brouillon" && (sendAuthorized(evs) ? <span className="px-pill good">Envoi autorisé</span> : <span className="px-pill blue">À valider</span>)}
@@ -510,19 +509,6 @@ export default function ProspectionPage() {
           <div className={"px-kpi" + (stats.due ? " warn" : "")}><span>Relances dues</span><b>{stats.due}</b></div>
         </div>
 
-        {countryCounts.length > 1 && (
-          <div className="px-strategies" role="group" aria-label="Pays">
-            <button type="button" className={"px-strat-chip" + (country === "" ? " active" : "")} onClick={() => setCountry("")}>
-              Tous pays<span>{countryCounts.reduce((n, [, c]) => n + c, 0)}</span>
-            </button>
-            {countryCounts.map(([code, n]) => (
-              <button key={code} type="button" className={"px-strat-chip" + (country === code ? " active" : "")} onClick={() => setCountry(code)}>
-                {countryLabel(code)}<span>{n}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
         <div className="px-strategies" role="group" aria-label="Stratégie">
           {(["", ...STRATEGIES, "none"] as const)
             .filter((s) => s === "" || s === strategy || (strategyCounts.get(s) ?? 0) > 0)
@@ -546,6 +532,12 @@ export default function ProspectionPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          <select value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Pays">
+            <option value="">Tous pays ({countryCounts.reduce((n, [, c]) => n + c, 0)})</option>
+            {countryCounts.map(([code, n]) => (
+              <option key={code} value={code}>{countryLabel(code)} ({n})</option>
+            ))}
+          </select>
           <select value={tier} onChange={(e) => setTier(e.target.value)} aria-label="Palier">
             <option value="">Tous paliers</option>
             <option value="A">Palier A</option>
@@ -622,7 +614,7 @@ export default function ProspectionPage() {
                         <span className="notif-badge card" title="Notification(s) à traiter">{notificationCount(p)}</span>
                       )}
                       <b>{p.name}</b>
-                      <small>{[p.city, p.headcount, p.score !== undefined ? `score ${p.score}` : ""].filter(Boolean).join(" · ")}</small>
+                      <small>{[p.city, countryLabel(p.country ?? "FR"), p.headcount, p.score !== undefined ? `score ${p.score}` : ""].filter(Boolean).join(" · ")}</small>
                       {p.stage === "brouillon" && (() => {
                         const d = lastOf(eventsByProspect.get(p.id) ?? [], ["draft_created", "draft_updated"]);
                         return d ? <small>Brouillon {fmtDate(d.at)}</small> : null;
