@@ -62,9 +62,22 @@ export const COUNTRY_LABELS: Record<string, string> = {
   TN: "Tunisie",
   MG: "Madagascar",
   MU: "Maurice",
+  IE: "Irlande",
+  AU: "Australie",
+  NZ: "Nouvelle-Zélande",
+  SG: "Singapour",
 };
 
 const COUNTRY_ALIASES: Record<string, string> = {
+  irlande: "IE",
+  ireland: "IE",
+  australie: "AU",
+  australia: "AU",
+  "nouvelle-zelande": "NZ",
+  "nouvelle zelande": "NZ",
+  "new zealand": "NZ",
+  singapour: "SG",
+  singapore: "SG",
   france: "FR",
   belgique: "BE",
   belgium: "BE",
@@ -80,8 +93,67 @@ const COUNTRY_ALIASES: Record<string, string> = {
   maurice: "MU",
 };
 
-export function countryLabel(code?: string): string {
+// Canada is the only bilingual market: the language tells Québec from
+// English-speaking Canada.
+export function countryLabel(code?: string, language?: Language): string {
+  if (code === "CA" && language === "en") return "Canada (anglophone)";
   return code ? COUNTRY_LABELS[code] ?? code : "";
+}
+
+// Prospecting language. Stored only when it differs from the country's
+// default (an English-speaking Canadian prospect), otherwise derived.
+export const LANGUAGES = ["fr", "en"] as const;
+export type Language = (typeof LANGUAGES)[number];
+
+export const LANGUAGE_LABELS: Record<Language, string> = {
+  fr: "Francophone",
+  en: "Anglophone",
+};
+
+const ENGLISH_COUNTRIES = new Set(["IE", "AU", "NZ", "SG", "GB", "US"]);
+
+export function prospectLanguage(p: { country?: string; language?: Language }): Language {
+  if (p.language) return p.language;
+  return ENGLISH_COUNTRIES.has(p.country ?? "FR") ? "en" : "fr";
+}
+
+// Accepts "en" / "fr" or a label ("Anglophone", "English", "Français").
+export function parseLanguage(v: unknown): Language | undefined {
+  if (typeof v !== "string") return undefined;
+  const k = v.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (["en", "anglophone", "anglais", "english"].includes(k)) return "en";
+  if (["fr", "francophone", "francais", "french"].includes(k)) return "fr";
+  return undefined;
+}
+
+// E-commerce platform of the prospect's site (client-direct prospecting).
+// Stored when known; older records only carry it as a tag ("WooCommerce"),
+// so the platform is also derived from the tags.
+export const PLATFORMS = ["woocommerce", "magento", "prestashop", "shopify", "autre"] as const;
+export type Platform = (typeof PLATFORMS)[number];
+
+export const PLATFORM_LABELS: Record<Platform, string> = {
+  woocommerce: "WooCommerce",
+  magento: "Magento",
+  prestashop: "PrestaShop",
+  shopify: "Shopify",
+  autre: "Autre",
+};
+
+export function parsePlatform(v: unknown): Platform | undefined {
+  if (typeof v !== "string") return undefined;
+  const k = v.trim().toLowerCase().replace(/\s+/g, "");
+  if (k === "woo" || k === "wordpress") return "woocommerce";
+  return (PLATFORMS as readonly string[]).includes(k) ? (k as Platform) : undefined;
+}
+
+export function prospectPlatform(p: { platform?: Platform; tags?: string[] }): Platform | undefined {
+  if (p.platform) return p.platform;
+  for (const t of p.tags ?? []) {
+    const found = parsePlatform(t);
+    if (found && found !== "autre") return found;
+  }
+  return undefined;
 }
 
 // Accepts an ISO code ("be") or a country name ("Belgique", "Québec").
@@ -164,6 +236,8 @@ export type Prospect = {
   source?: string;
   strategy?: Strategy;
   country?: string;
+  language?: Language;
+  platform?: Platform;
   tags: string[];
   stage: Stage;
   nextAction?: string;

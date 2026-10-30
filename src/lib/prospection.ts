@@ -20,6 +20,8 @@ import {
   type Reminder,
   type Stage,
   parseCountry,
+  parseLanguage,
+  parsePlatform,
   parseStrategy,
 } from "./prospectionShared";
 
@@ -66,7 +68,7 @@ function isoDate(v: unknown): string | undefined {
 
 const EDITABLE_FIELDS = [
   "name", "siren", "legalForm", "city", "region", "headcount", "revenue", "score", "tier", "website",
-  "emails", "phones", "linkedin", "decisionMaker", "decisionRole", "decisionEmail", "source", "strategy", "country", "tags",
+  "emails", "phones", "linkedin", "decisionMaker", "decisionRole", "decisionEmail", "source", "strategy", "country", "language", "platform", "tags",
   "nextAction", "nextFollowUpAt", "custom",
 ] as const;
 
@@ -99,6 +101,12 @@ function applyFields(target: Prospect, input: Record<string, unknown>): void {
         break;
       case "country":
         target.country = parseCountry(v);
+        break;
+      case "language":
+        target.language = parseLanguage(v);
+        break;
+      case "platform":
+        target.platform = parsePlatform(v);
         break;
       case "custom":
         if (v && typeof v === "object") {
@@ -409,7 +417,7 @@ export async function addEvent(
 
 const PROSPECT_COLUMNS: (keyof Prospect)[] = [
   "id", "name", "siren", "legalForm", "city", "region", "headcount", "revenue", "score", "tier", "website",
-  "emails", "phones", "linkedin", "decisionMaker", "decisionRole", "decisionEmail", "source", "strategy", "country", "tags",
+  "emails", "phones", "linkedin", "decisionMaker", "decisionRole", "decisionEmail", "source", "strategy", "country", "language", "platform", "tags",
   "stage", "nextAction", "nextFollowUpAt", "lastContactAt", "archived", "createdAt", "updatedAt",
 ];
 const EVENT_COLUMNS: (keyof ProspectEvent)[] = [
@@ -496,6 +504,8 @@ const ALIASES: Record<string, string> = {
   source: "source", tags: "tags", "prochaine action": "nextAction", nextaction: "nextAction",
   strategy: "strategy", "stratégie": "strategy", strategie: "strategy",
   country: "country", pays: "country",
+  language: "language", langue: "language",
+  platform: "platform", plateforme: "platform", cms: "platform", technologie: "platform",
 };
 
 export function rowsToProspectInputs(rows: Record<string, string>[]): Record<string, unknown>[] {

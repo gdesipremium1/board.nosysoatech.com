@@ -37,10 +37,30 @@ les colonnes `strategy`, `stratégie` ou `strategie` sont reconnues.
 
 ## Pays
 
-Champ `country` (code ISO à deux lettres : `FR`, `BE`, `CH`, `LU`, `CA`, `MC`…),
-filtrable par puces dans l'interface. L'API accepte aussi le nom
-(`"Belgique"`, `"Québec"`). Une fiche sans pays est comptée comme `FR`
-(toutes les fiches antérieures étaient françaises). Colonnes CSV `country` ou `pays`.
+Champ `country` (code ISO à deux lettres : `FR`, `BE`, `CH`, `LU`, `CA`, `MC`,
+`IE`, `AU`, `NZ`, `SG`…), filtrable par liste déroulante dans l'interface.
+L'API accepte aussi le nom (`"Belgique"`, `"Québec"`, `"Australia"`). Une fiche
+sans pays est comptée comme `FR` (toutes les fiches antérieures étaient
+françaises). Colonnes CSV `country` ou `pays`.
+
+## Langue
+
+Champ `language` : `fr` (Francophone) ou `en` (Anglophone), filtrable dans
+l'interface (liste « Toutes langues », qui restreint ensuite la liste des pays).
+Il n'est à renseigner que s'il diffère de la langue du pays : sans valeur,
+IE, AU, NZ, SG (et GB, US) sont anglophones, tous les autres francophones.
+Cas typique : un prospect du Canada anglophone = `{"country":"CA","language":"en"}`,
+affiché « Canada (anglophone) » et filtré à part du Québec. L'API accepte aussi
+`"Anglophone"`, `"English"`, `"Francophone"`. Colonnes CSV `language` ou `langue`.
+
+## Technologie
+
+Champ `platform` : technologie du site du prospect (`woocommerce`, `magento`,
+`prestashop`, `shopify`, `autre`), filtrable dans l'interface (« Toutes
+technos », « Sans techno »). Sans valeur, elle est déduite des tags
+(`WooCommerce`, `Magento`, `PrestaShop`, `Shopify`), ce qui classe les fiches
+antérieures sans migration. Colonnes CSV `platform`, `plateforme`, `cms` ou
+`technologie`.
 
 ## Authentification
 

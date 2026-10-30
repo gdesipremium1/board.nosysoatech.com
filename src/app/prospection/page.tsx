@@ -8,11 +8,19 @@ import {
   STAGE_LABELS,
   STAGES,
   STRATEGIES,
+  LANGUAGES,
+  LANGUAGE_LABELS,
+  PLATFORMS,
+  PLATFORM_LABELS,
   STRATEGY_LABELS,
   countryLabel,
+  prospectLanguage,
+  prospectPlatform,
   dueReminders,
   notificationCount,
   type EventType,
+  type Language,
+  type Platform,
   type Prospect,
   type ProspectEvent,
   type Stage,
@@ -123,15 +131,27 @@ function sendAuthorized(events: ProspectEvent[]): boolean {
   return false;
 }
 
+// Country filter key. Prospects created before the field existed were all
+// French (missing country = FR); Canada is split by language so Québec and
+// English-speaking Canada are filtered separately.
+function countryKey(p: Prospect): string {
+  const c = p.country ?? "FR";
+  return c === "CA" && prospectLanguage(p) === "en" ? "CA-en" : c;
+}
+
+function countryKeyLabel(key: string): string {
+  return key === "CA-en" ? countryLabel("CA", "en") : countryLabel(key);
+}
+
 const EMPTY_FORM = {
-  name: "", strategy: "", country: "", city: "", headcount: "", tier: "", score: "", website: "", emails: "", phones: "",
+  name: "", strategy: "", country: "", language: "", platform: "", city: "", headcount: "", tier: "", score: "", website: "", emails: "", phones: "",
   linkedin: "", decisionMaker: "", decisionRole: "", decisionEmail: "", source: "", tags: "", nextAction: "",
 };
 type FormState = typeof EMPTY_FORM;
 
 function toForm(p: Prospect): FormState {
   return {
-    name: p.name, strategy: p.strategy ?? "", country: p.country ?? "", city: p.city ?? "", headcount: p.headcount ?? "", tier: p.tier ?? "",
+    name: p.name, strategy: p.strategy ?? "", country: p.country ?? "", language: p.language ?? "", platform: p.platform ?? "", city: p.city ?? "", headcount: p.headcount ?? "", tier: p.tier ?? "",
     score: p.score?.toString() ?? "", website: p.website ?? "", emails: p.emails.join("; "),
     phones: p.phones.join("; "), linkedin: p.linkedin ?? "", decisionMaker: p.decisionMaker ?? "",
     decisionRole: p.decisionRole ?? "", decisionEmail: p.decisionEmail ?? "", source: p.source ?? "",
@@ -142,7 +162,9 @@ function toForm(p: Prospect): FormState {
 const FORM_FIELDS: { key: keyof FormState; label: string; wide?: boolean }[] = [
   { key: "name", label: "Nom", wide: true },
   { key: "strategy", label: "Stratégie" },
-  { key: "country", label: "Pays (code : FR, BE, CH, LU, CA, MC…)" },
+  { key: "country", label: "Pays (code : FR, BE, CH, LU, CA, MC, IE, AU, NZ, SG…)" },
+  { key: "language", label: "Langue" },
+  { key: "platform", label: "Technologie du site" },
   { key: "city", label: "Ville" },
   { key: "headcount", label: "Effectif" },
   { key: "tier", label: "Palier (A/B/C)" },
@@ -170,6 +192,8 @@ export default function ProspectionPage() {
   const [tier, setTier] = useState("");
   // "" = toutes, "none" = prospects pas encore classés.
   const [strategy, setStrategy] = useState<Strategy | "" | "none">("");
+  const [language, setLanguage] = useState<Language | "">("");
+  const [platform, setPlatform] = useState<Platform | "" | "none">("");
   const [country, setCountry] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [source, setSource] = useState("");
@@ -242,7 +266,9 @@ export default function ProspectionPage() {
       if (!showArchived && p.archived) return false;
       if (tier && p.tier !== tier) return false;
       if (strategy === "none" ? !!p.strategy : strategy && p.strategy !== strategy) return false;
-      if (country && (p.country ?? "FR") !== country) return false;
+      if (language && prospectLanguage(p) !== language) return false;
+      if (country && countryKey(p) !== country) return false;
+      if (platform === "none" ? !!prospectPlatform(p) : platform && prospectPlatform(p) !== platform) return false;
       if (stageFilter && p.stage !== stageFilter) return false;
       if (source && p.source !== source) return false;
       if (!q) return true;
@@ -250,7 +276,7 @@ export default function ProspectionPage() {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [prospects, query, tier, strategy, country, stageFilter, source, showArchived]);
+  }, [prospects, query, tier, strategy, language, country, platform, stageFilter, source, showArchived]);
 
   // Counts for the strategy chips (live prospects only, other filters ignored
   // so each chip always tells how big that segment is).
@@ -261,13 +287,34 @@ export default function ProspectionPage() {
     return counts;
   }, [prospects, showArchived]);
 
-  // Same idea per country. Prospects created before the field existed were
-  // all French, so a missing country counts as FR.
+  // Same idea per language, and per country within the chosen language so the
+  // country list only offers markets of that language.
+  const languageCounts = useMemo(() => {
+    const counts = new Map<Language, number>();
+    for (const p of prospects) {
+      if (!showArchived && p.archived) continue;
+      counts.set(prospectLanguage(p), (counts.get(prospectLanguage(p)) ?? 0) + 1);
+    }
+    return counts;
+  }, [prospects, showArchived]);
+
   const countryCounts = useMemo(() => {
-    const live = prospects.filter((p) => showArchived || !p.archived);
     const counts = new Map<string, number>();
-    for (const p of live) counts.set(p.country ?? "FR", (counts.get(p.country ?? "FR") ?? 0) + 1);
+    for (const p of prospects) {
+      if ((!showArchived && p.archived) || (language && prospectLanguage(p) !== language)) continue;
+      counts.set(countryKey(p), (counts.get(countryKey(p)) ?? 0) + 1);
+    }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [prospects, showArchived, language]);
+
+  const platformCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of prospects) {
+      if (!showArchived && p.archived) continue;
+      const key = prospectPlatform(p) ?? "none";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
   }, [prospects, showArchived]);
 
   const stats = useMemo(() => {
@@ -532,11 +579,28 @@ export default function ProspectionPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          <select
+            value={language}
+            onChange={(e) => { setLanguage(e.target.value as Language | ""); setCountry(""); }}
+            aria-label="Langue"
+          >
+            <option value="">Toutes langues</option>
+            {LANGUAGES.filter((l) => languageCounts.has(l)).map((l) => (
+              <option key={l} value={l}>{LANGUAGE_LABELS[l]} ({languageCounts.get(l)})</option>
+            ))}
+          </select>
           <select value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Pays">
             <option value="">Tous pays ({countryCounts.reduce((n, [, c]) => n + c, 0)})</option>
             {countryCounts.map(([code, n]) => (
-              <option key={code} value={code}>{countryLabel(code)} ({n})</option>
+              <option key={code} value={code}>{countryKeyLabel(code)} ({n})</option>
             ))}
+          </select>
+          <select value={platform} onChange={(e) => setPlatform(e.target.value as Platform | "" | "none")} aria-label="Technologie">
+            <option value="">Toutes technos</option>
+            {PLATFORMS.filter((t) => platformCounts.has(t)).map((t) => (
+              <option key={t} value={t}>{PLATFORM_LABELS[t]} ({platformCounts.get(t)})</option>
+            ))}
+            {platformCounts.has("none") && <option value="none">Sans techno ({platformCounts.get("none")})</option>}
           </select>
           <select value={tier} onChange={(e) => setTier(e.target.value)} aria-label="Palier">
             <option value="">Tous paliers</option>
@@ -614,7 +678,7 @@ export default function ProspectionPage() {
                         <span className="notif-badge card" title="Notification(s) à traiter">{notificationCount(p)}</span>
                       )}
                       <b>{p.name}</b>
-                      <small>{[p.city, countryLabel(p.country ?? "FR"), p.headcount, p.score !== undefined ? `score ${p.score}` : ""].filter(Boolean).join(" · ")}</small>
+                      <small>{[p.city, countryLabel(p.country ?? "FR", p.language), p.headcount, p.score !== undefined ? `score ${p.score}` : ""].filter(Boolean).join(" · ")}</small>
                       {p.stage === "brouillon" && (() => {
                         const d = lastOf(eventsByProspect.get(p.id) ?? [], ["draft_created", "draft_updated"]);
                         return d ? <small>Brouillon {fmtDate(d.at)}</small> : null;
@@ -657,7 +721,7 @@ export default function ProspectionPage() {
                     </td>
                     <td>{STAGE_LABELS[p.stage]}</td>
                     <td>{p.strategy ? STRATEGY_LABELS[p.strategy] : ""}</td>
-                    <td>{countryLabel(p.country ?? "FR")}</td>
+                    <td>{countryLabel(p.country ?? "FR", p.language)}</td>
                     <td>{p.tier ?? ""}</td>
                     <td>{p.score ?? ""}</td>
                     <td>{p.city ?? ""}</td>
@@ -764,6 +828,16 @@ export default function ProspectionPage() {
                       <option value="">Non classé</option>
                       {STRATEGIES.map((s) => <option key={s} value={s}>{STRATEGY_LABELS[s]}</option>)}
                     </select>
+                  ) : f.key === "language" ? (
+                    <select value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}>
+                      <option value="">Selon le pays</option>
+                      {LANGUAGES.map((l) => <option key={l} value={l}>{LANGUAGE_LABELS[l]}</option>)}
+                    </select>
+                  ) : f.key === "platform" ? (
+                    <select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
+                      <option value="">Selon les tags</option>
+                      {PLATFORMS.map((t) => <option key={t} value={t}>{PLATFORM_LABELS[t]}</option>)}
+                    </select>
                   ) : (
                     <input value={form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} required={f.key === "name"} />
                   )}
@@ -856,7 +930,8 @@ export default function ProspectionPage() {
                 {selected.linkedin && (<><dt>LinkedIn</dt><dd><a href={selected.linkedin} target="_blank" rel="noopener">{selected.linkedin.replace(/^https?:\/\/(www\.)?linkedin\.com/, "")}</a></dd></>)}
                 {selected.score !== undefined && (<><dt>Score</dt><dd>{selected.score} / 100{selected.tier ? ` · palier ${selected.tier}` : ""}</dd></>)}
                 <dt>Stratégie</dt><dd>{selected.strategy ? STRATEGY_LABELS[selected.strategy] : "Non classé"}</dd>
-                <dt>Pays</dt><dd>{countryLabel(selected.country ?? "FR")}</dd>
+                <dt>Pays</dt><dd>{countryLabel(selected.country ?? "FR", selected.language)}</dd>
+                {prospectPlatform(selected) && (<><dt>Technologie</dt><dd>{PLATFORM_LABELS[prospectPlatform(selected)!]}</dd></>)}
                 {selected.source && (<><dt>Source</dt><dd>{selected.source}</dd></>)}
                 {selected.nextAction && (<><dt>Prochaine action</dt><dd>{selected.nextAction}</dd></>)}
                 {Object.entries(selected.custom ?? {}).map(([k, v]) => (
