@@ -133,7 +133,7 @@ export default function UsersPage() {
           <span className="wm-tech">tech</span>
           <span className="wm-board">/board</span>
         </div>
-        <Link className="tab" href="/">
+        <Link className="tab" href="/board">
           ← Retour au tableau
         </Link>
       </header>

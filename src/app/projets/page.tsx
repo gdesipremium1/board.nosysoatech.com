@@ -83,7 +83,7 @@ export default function ProjetsPage() {
     next.projects.push(emptyProject(id, name.trim()));
     try {
       await save(next);
-      window.location.href = `/?project=${encodeURIComponent(id)}`;
+      window.location.href = `/board?project=${encodeURIComponent(id)}`;
     } catch (err) {
       setError((err as Error).message);
     }
@@ -161,7 +161,7 @@ export default function ProjetsPage() {
           <h1>Projets</h1>
           <span className="pj-count">{projects.length} projet{projects.length > 1 ? "s" : ""}</span>
           {trashCount > 0 && (
-            <Link className="pj-trash-link" href="/?trash=1">🗑 Corbeille ({trashCount})</Link>
+            <Link className="pj-trash-link" href="/board?trash=1">🗑 Corbeille ({trashCount})</Link>
           )}
         </div>
         {error && <p className="cd-error" onClick={() => setError("")}>{error}</p>}
@@ -175,7 +175,7 @@ export default function ProjetsPage() {
               const total = cardCount(p);
               return (
                 <div key={p.id} className="pj-card">
-                  <Link className="pj-open" href={`/?project=${encodeURIComponent(p.id)}`}>
+                  <Link className="pj-open" href={`/board?project=${encodeURIComponent(p.id)}`}>
                     <span className="pj-logo">
                       {p.logoUrl ? <img src={p.logoUrl} alt="" /> : p.name.slice(0, 2).toUpperCase()}
                     </span>

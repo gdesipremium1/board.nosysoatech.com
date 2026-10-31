@@ -6,11 +6,11 @@ import { PRESET_COLORS } from "@/lib/colors";
 import { notificationCount, type Prospect } from "@/lib/prospectionShared";
 
 // Header menu shared by the secondary pages (/projets, /prospection). The
-// board itself (src/app/page.tsx) has a richer version of the same menu,
+// board itself (src/app/board/page.tsx) has a richer version of the same menu,
 // with the profile editor, participants and trash of the open project.
 
 type Me = { username: string; role: string; avatarUrl?: string };
-type Current = "projets" | "prospection";
+type Current = "accueil" | "projets" | "prospection";
 
 function avatarColor(username: string): string {
   let hash = 0;
@@ -73,6 +73,10 @@ export default function AppMenu({ current, me, trashCount }: { current: Current;
       </button>
       {open && (
         <div className="main-menu" role="menu">
+          <Link className={"mm-item" + (current === "accueil" ? " mm-current" : "")} href="/">
+            <span className="mm-icon" aria-hidden="true">⌂</span>
+            Accueil
+          </Link>
           <Link className={"mm-item" + (current === "projets" ? " mm-current" : "")} href="/projets">
             <span className="mm-icon" aria-hidden="true">▦</span>
             Board
@@ -93,7 +97,7 @@ export default function AppMenu({ current, me, trashCount }: { current: Current;
               <span className="mm-meta mm-meta-text">admin</span>
             </Link>
           )}
-          <Link className="mm-item" href="/?trash=1">
+          <Link className="mm-item" href="/board?trash=1">
             <span className="mm-icon" aria-hidden="true">🗑</span>
             Corbeille
             {!!trashCount && <span className="mm-meta">{trashCount}</span>}

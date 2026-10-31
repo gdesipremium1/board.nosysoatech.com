@@ -830,3 +830,155 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Statistiques : graphiques (ProspectionCharts.tsx) ----
+   Grille 2 x 2 de largeur plafonnée : chaque graphique garde un rapport
+   largeur / hauteur proche de la maquette, quel que soit l'écran. */
+.px-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  max-width: 1180px;
+  margin-bottom: 14px;
+}
+.px-kpis {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.px-kpi {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.px-kpi span {
+  display: block;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.px-kpi b {
+  display: block;
+  margin-top: 2px;
+  font-size: 24px;
+  font-weight: 500;
+}
+.px-chart {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px 12px;
+  min-width: 0;
+}
+.px-chart h3 {
+  font-size: 13.5px;
+  font-weight: 500;
+  margin: 0 0 6px;
+}
+.px-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 0 0 6px;
+}
+.px-chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.px-chart-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.px-chart-legend i.dashed {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed;
+}
+.px-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+}
+.px-svg .px-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+.px-svg .px-base {
+  stroke: var(--ink-faint);
+  stroke-width: 1;
+}
+.px-svg .px-tick {
+  fill: var(--ink-faint);
+  font-size: 11px;
+}
+.px-svg .px-dot {
+  stroke: var(--card);
+  stroke-width: 2;
+}
+.px-hbar {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 84px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  margin: 10px 0;
+}
+.px-hbar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.px-hbar > div {
+  height: 18px;
+  background: var(--paper);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.px-hbar > div > i {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+}
+.px-stack {
+  display: flex;
+  gap: 2px;
+  height: 100%;
+}
+.px-stack i {
+  display: block;
+  height: 100%;
+}
+.px-stack i:last-child {
+  border-radius: 0 4px 4px 0;
+}
+.px-hbar b {
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+.px-hbar small {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+.px-chart-empty {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  margin: 4px 0 12px;
+}
+@media (max-width: 900px) {
+  .px-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .px-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

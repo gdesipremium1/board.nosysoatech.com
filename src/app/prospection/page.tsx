@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./prospection.css";
 import AppMenu from "@/components/AppMenu";
+import ProspectionCharts from "./ProspectionCharts";
 import {
   EVENT_LABELS,
   STAGE_LABELS,
@@ -187,7 +188,7 @@ export default function ProspectionPage() {
   const [events, setEvents] = useState<ProspectEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [view, setView] = useState<View>("pipeline");
+  const [view, setView] = useState<View>("stats");
   const [query, setQuery] = useState("");
   const [tier, setTier] = useState("");
   // "" = toutes, "none" = prospects pas encore classés.
@@ -622,7 +623,7 @@ export default function ProspectionPage() {
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Archivés
           </label>
           <div className="px-seg" role="group" aria-label="Vue">
-            {(["pipeline", "table", "stats"] as View[]).map((v) => (
+            {(["stats", "pipeline", "table"] as View[]).map((v) => (
               <button key={v} type="button" className={view === v ? "active" : ""} onClick={() => setView(v)}>
                 {v === "pipeline" ? "Pipeline" : v === "table" ? "Tableau" : "Statistiques"}
               </button>
@@ -737,6 +738,8 @@ export default function ProspectionPage() {
         )}
 
         {view === "stats" && prospects.length > 0 && (
+          <>
+          <ProspectionCharts prospects={filtered} events={events} />
           <div className="px-stats">
             <div className="px-stat-block">
               <h3>Entonnoir</h3>
@@ -803,6 +806,7 @@ export default function ProspectionPage() {
               <p className="px-legend"><i /> envois <em /> réponses</p>
             </div>
           </div>
+          </>
         )}
       </div>
 
