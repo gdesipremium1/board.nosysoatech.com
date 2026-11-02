@@ -10,7 +10,7 @@ import { notificationCount, type Prospect } from "@/lib/prospectionShared";
 // with the profile editor, participants and trash of the open project.
 
 type Me = { username: string; role: string; avatarUrl?: string };
-type Current = "accueil" | "projets" | "prospection";
+type Current = "accueil" | "projets" | "prospection" | "marche";
 
 function avatarColor(username: string): string {
   let hash = 0;
@@ -88,6 +88,13 @@ export default function AppMenu({ current, me, trashCount }: { current: Current;
               Prospects
               {dueCount > 0 && <span className="notif-badge inline">{dueCount}</span>}
               {prospectCount !== null && <span className="mm-meta">{prospectCount}</span>}
+            </Link>
+          )}
+          {canManage && (
+            <Link className={"mm-item" + (current === "marche" ? " mm-current" : "")} href="/marche">
+              <span className="mm-icon" aria-hidden="true">◈</span>
+              Marché
+              <span className="mm-meta mm-meta-text">études</span>
             </Link>
           )}
           {me.role === "admin" && (

@@ -17,9 +17,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Automation (API key) only ever reaches the prospection API; the route
-  // handlers re-check the key themselves.
-  if (pathname.startsWith("/api/prospection/") && hasValidApiKey(request)) {
+  // Automation (API key) only ever reaches the prospection and market-study
+  // APIs; the route handlers re-check the key themselves.
+  if ((pathname.startsWith("/api/prospection/") || pathname === "/api/market") && hasValidApiKey(request)) {
     return NextResponse.next();
   }
 
@@ -39,7 +39,7 @@ export async function middleware(request: NextRequest) {
   // candidates) and a narrow write (granting a project to someone) for the
   // per-project "participants" panel on the board itself; each route
   // handler enforces its own, more specific rule per HTTP verb.
-  if (pathname === "/prospection" && session.role !== "admin" && session.role !== "manager") {
+  if ((pathname === "/prospection" || pathname === "/marche") && session.role !== "admin" && session.role !== "manager") {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

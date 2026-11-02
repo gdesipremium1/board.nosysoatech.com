@@ -102,6 +102,14 @@ export default function HomePage() {
             </Link>
           )}
 
+          {canManage && (
+            <Link href="/marche" className="home-tile tile-market">
+              <MarketArt />
+              <span className="home-title">Marché</span>
+              <span className="home-desc">Demande par compétence et par pays</span>
+            </Link>
+          )}
+
           {isAdmin && (
             <Link href="/users" className="home-tile tile-users">
               <UsersArt />
@@ -168,6 +176,28 @@ function UsersArt() {
       <path d="M52 88 a28 25 0 0 1 56 0 z" className="art-blue" />
       <rect x="118" y="6" width="34" height="22" rx="5" className="art-card" />
       <path d="M127 17 l5 5 l10 -10" className="art-check" />
+    </svg>
+  );
+}
+
+function MarketArt() {
+  return (
+    <svg className="home-art" viewBox="0 0 160 96" aria-hidden="true">
+      {[0, 1, 2, 3].map((r) =>
+        [0, 1, 2, 3, 4].map((c) => (
+          <rect
+            key={`${r}-${c}`}
+            x={8 + c * 22}
+            y={8 + r * 21}
+            width="18"
+            height="17"
+            rx="3"
+            className={(r + c) % 4 === 0 ? "art-blue" : (r * c) % 3 === 1 ? "art-amber" : "art-card"}
+          />
+        ))
+      )}
+      <circle cx="136" cy="40" r="17" className="art-ring" />
+      <line x1="148" y1="52" x2="156" y2="62" className="art-handle" />
     </svg>
   );
 }

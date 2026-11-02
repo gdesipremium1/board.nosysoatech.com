@@ -1845,6 +1845,14 @@ export default function Home() {
                   </Link>
                 )}
 
+                {canManage && (
+                  <Link className="mm-item" href="/marche">
+                    <span className="mm-icon" aria-hidden="true">◈</span>
+                    Marché
+                    <span className="mm-meta mm-meta-text">études</span>
+                  </Link>
+                )}
+
                 {canManage && activeProject && (
                   <div className="menu-participants" ref={participantsRef}>
                     <button type="button" className="mm-item" onClick={() => setParticipantsOpen((v) => !v)}>
