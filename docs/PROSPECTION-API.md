@@ -112,7 +112,7 @@ openssl rand -hex 24
 | GET | `/api/prospection/export?format=csv&dataset=prospects` | Export CSV prospects |
 | GET | `/api/prospection/export?format=csv&dataset=events` | Export CSV historique |
 | GET | `/api/prospection/export?format=json` | Export JSON complet |
-| POST | `/api/prospection/import` | Restauration complète d'un export JSON `{ prospects, events }` en conservant identifiants, dates et auteurs ; ce qui existe déjà est ignoré. Clé d'API ou admin uniquement. |
+| POST | `/api/prospection/import` | Restauration complète d'un export JSON `{ prospects, events, doNotContact }` en conservant identifiants, dates et auteurs. Un prospect déjà présent (même id, sinon même nom) est fusionné : ses événements sont rattachés à la fiche existante, ceux déjà présents (mêmes ids Gmail, sinon même sujet et note) sont ignorés, et son étape est reprise si la source est plus récente. Relancer l'import ne crée donc aucun doublon. Clé d'API ou admin uniquement ; dans l'interface, le bouton « Importer » avec un fichier « Tout (JSON) » appelle cette route. |
 
 ### Événements
 

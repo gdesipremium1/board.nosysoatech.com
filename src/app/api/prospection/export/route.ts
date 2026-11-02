@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eventsToCsv, listEvents, listProspects, prospectsToCsv } from "@/lib/prospection";
+import { eventsToCsv, listDoNotContact, listEvents, listProspects, prospectsToCsv } from "@/lib/prospection";
 import { prospectionActor } from "@/lib/prospectionAuth";
 
 // ?format=csv|json  &dataset=prospects|events  (json without dataset = both)
@@ -9,12 +9,16 @@ export async function GET(request: NextRequest) {
   }
   const format = request.nextUrl.searchParams.get("format") === "csv" ? "csv" : "json";
   const dataset = request.nextUrl.searchParams.get("dataset");
-  const [prospects, events] = await Promise.all([listProspects(), listEvents()]);
+  const [prospects, events, doNotContact] = await Promise.all([listProspects(), listEvents(), listDoNotContact()]);
   const stamp = new Date().toISOString().slice(0, 10);
 
   if (format === "json") {
     const payload =
-      dataset === "prospects" ? prospects : dataset === "events" ? events : { exportedAt: new Date().toISOString(), prospects, events };
+      dataset === "prospects"
+        ? prospects
+        : dataset === "events"
+          ? events
+          : { exportedAt: new Date().toISOString(), prospects, events, doNotContact };
     return new NextResponse(JSON.stringify(payload, null, 2), {
       headers: {
         "Content-Type": "application/json; charset=utf-8",

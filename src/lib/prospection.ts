@@ -263,22 +263,39 @@ function cleanReminders(v: unknown): Reminder[] | undefined {
   return out;
 }
 
+// Same event recorded on both boards (possibly under different ids, or with
+// a slightly different note): Gmail ids identify a message, otherwise the
+// subject and note do.
+function eventKey(e: Partial<ProspectEvent>, prospectId: string): string {
+  const gmail = e.gmailMessageId || e.gmailDraftId;
+  const detail = gmail ? "" : e.type === "send_authorized" ? e.subject : [e.subject, e.note, e.dueAt, e.reminderId].join("~");
+  return [prospectId, e.type, e.gmailMessageId ?? "", e.gmailDraftId ?? "", detail ?? ""].join("|");
+}
+
 // Full restore of an export (GET /api/prospection/export?format=json), e.g.
 // to move a local board to the online one. Unlike createProspects/addEvent,
 // ids, stages, dates and actors are kept as they are, so the history reads
-// exactly like the source. Records whose id already exists are skipped,
-// never overwritten, which makes a re-run harmless.
+// exactly like the source. A prospect that already exists (same id, else
+// same name) is merged rather than duplicated: its events are mapped onto
+// the existing record, events already present are skipped, and its pipeline
+// state is taken from the source when the source is more recent. A re-run
+// is therefore harmless.
 export async function importFull(
-  data: { prospects?: unknown; events?: unknown },
+  data: { prospects?: unknown; events?: unknown; doNotContact?: unknown },
   actor: string
-): Promise<{ prospects: number; events: number; skippedProspects: number; skippedEvents: number }> {
+): Promise<{ prospects: number; events: number; merged: number; skippedEvents: number; doNotContact: number }> {
   const prospects = await listProspects();
   const events = await listEvents();
   const prospectIds = new Set(prospects.map((p) => p.id));
+  const byName = new Map(prospects.map((p) => [p.name.trim().toLowerCase(), p]));
   const eventIds = new Set(events.map((e) => e.id));
+  const eventKeys = new Set(events.map((e) => eventKey(e, e.prospectId)));
+  // Source prospect id -> id on this board; ids of prospects merged by name.
+  const idMap = new Map<string, string>();
+  const mergedByName = new Set<string>();
   const now = new Date().toISOString();
   let addedP = 0;
-  let skippedP = 0;
+  let mergedP = 0;
   let addedE = 0;
   let skippedE = 0;
 
@@ -288,10 +305,24 @@ export async function importFull(
     const id = str(input.id, 100);
     const name = str(input.name, 200);
     if (!id || !name) continue;
-    if (prospectIds.has(id)) {
-      skippedP++;
+    const existing = prospects.find((p) => p.id === id) ?? byName.get(name.toLowerCase());
+    if (existing) {
+      idMap.set(id, existing.id);
+      if (existing.id !== id) mergedByName.add(id);
+      const updatedAt = isoDate(input.updatedAt);
+      const stage = str(input.stage, 20) as Stage | undefined;
+      if (updatedAt && updatedAt > existing.updatedAt && stage && STAGES.includes(stage)) {
+        existing.stage = stage;
+        existing.nextAction = str(input.nextAction, 300);
+        existing.nextFollowUpAt = isoDate(input.nextFollowUpAt);
+        existing.lastContactAt = isoDate(input.lastContactAt) ?? existing.lastContactAt;
+        existing.archived = input.archived === true;
+        existing.updatedAt = updatedAt;
+      }
+      mergedP++;
       continue;
     }
+    idMap.set(id, id);
     const stage = str(input.stage, 20) as Stage | undefined;
     const p: Prospect = {
       id,
@@ -317,13 +348,29 @@ export async function importFull(
     if (!raw || typeof raw !== "object") continue;
     const input = raw as Record<string, unknown>;
     const id = str(input.id, 100);
-    const prospectId = str(input.prospectId, 100);
+    const sourceProspectId = str(input.prospectId, 100);
+    const prospectId = sourceProspectId && (idMap.get(sourceProspectId) ?? (prospectIds.has(sourceProspectId) ? sourceProspectId : undefined));
     const type = input.type as EventType;
-    if (!id || !prospectId || !prospectIds.has(prospectId) || !EVENT_TYPES.includes(type)) continue;
-    if (eventIds.has(id)) {
+    if (!id || !sourceProspectId || !prospectId || !EVENT_TYPES.includes(type)) continue;
+    // A prospect merged by name already has its own creation event.
+    const duplicateCreation = mergedByName.has(sourceProspectId) && (type === "prospect_created" || type === "imported");
+    const key = eventKey(
+      {
+        type,
+        subject: str(input.subject, 300),
+        note: str(input.note, 5000),
+        gmailMessageId: str(input.gmailMessageId, 200),
+        gmailDraftId: str(input.gmailDraftId, 200),
+        dueAt: isoDate(input.dueAt),
+        reminderId: str(input.reminderId, 100),
+      },
+      prospectId
+    );
+    if (eventIds.has(id) || eventKeys.has(key) || duplicateCreation) {
       skippedE++;
       continue;
     }
+    eventKeys.add(key);
     const channel = str(input.channel, 20) as Channel | undefined;
     const sentiment = str(input.sentiment, 10) as ProspectEvent["sentiment"];
     const stage = str(input.stage, 20) as Stage | undefined;
@@ -352,7 +399,32 @@ export async function importFull(
   events.sort((a, b) => a.at.localeCompare(b.at));
   await writeJson(PROSPECTS_FILE, prospects);
   await writeJson(EVENTS_FILE, events);
-  return { prospects: addedP, events: addedE, skippedProspects: skippedP, skippedEvents: skippedE };
+
+  // "Ne plus contacter" list: entries are merged with their original date.
+  let addedD = 0;
+  if (Array.isArray(data.doNotContact)) {
+    const list = await listDoNotContact();
+    const known = new Set(list.map((d) => d.domain));
+    for (const raw of data.doNotContact.slice(0, 5000)) {
+      if (!raw || typeof raw !== "object") continue;
+      const d = raw as Record<string, unknown>;
+      const domain = str(d.domain, 200)?.toLowerCase();
+      if (!domain || known.has(domain)) continue;
+      const sourceId = str(d.prospectId, 100);
+      list.push({
+        domain,
+        reason: str(d.reason, 500),
+        prospectId: sourceId ? idMap.get(sourceId) ?? sourceId : undefined,
+        prospectName: str(d.prospectName, 200),
+        at: isoDate(d.at) ?? now,
+        actor: str(d.actor, 40) ?? actor,
+      });
+      known.add(domain);
+      addedD++;
+    }
+    if (addedD) await writeJson(DO_NOT_CONTACT_FILE, list);
+  }
+  return { prospects: addedP, events: addedE, merged: mergedP, skippedEvents: skippedE, doNotContact: addedD };
 }
 
 export async function createProspects(

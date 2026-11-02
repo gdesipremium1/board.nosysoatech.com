@@ -407,6 +407,24 @@ export default function ProspectionPage() {
       let body: Record<string, unknown>;
       if (file.name.toLowerCase().endsWith(".json")) {
         const parsed = JSON.parse(text);
+        // A full export (« Tout (JSON) » of another board) carries the
+        // history: restore it with ids, dates and authors, merging what exists.
+        if (!Array.isArray(parsed) && Array.isArray(parsed.events)) {
+          const res = await fetch("/api/prospection/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: text,
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(json.error || "Import impossible.");
+          setNotice(
+            `Sauvegarde importée : ${json.prospects} prospect(s) ajouté(s), ${json.merged} fusionné(s), ` +
+              `${json.events} événement(s) ajouté(s), ${json.skippedEvents} déjà présent(s), ` +
+              `${json.doNotContact} domaine(s) « Ne plus contacter ».`
+          );
+          await load();
+          return;
+        }
         body = { prospects: Array.isArray(parsed) ? parsed : parsed.prospects ?? [] };
       } else {
         body = { csv: text };
