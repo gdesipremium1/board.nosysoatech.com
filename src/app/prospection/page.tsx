@@ -19,6 +19,7 @@ import {
   prospectPlatform,
   dueReminders,
   notificationCount,
+  type DoNotContact,
   type EventType,
   type Language,
   type Platform,
@@ -39,8 +40,9 @@ function defaultReminderInput(): string {
 type Me = { userId: string; username: string; role: string; avatarUrl?: string };
 type View = "pipeline" | "table" | "stats";
 
-// Pipeline columns group a few stages each; "perdu" only shows in the
-// table view (or with the stage filter) so the board stays about what's live.
+// Pipeline columns group a few stages each; "perdu" and "ne plus contacter"
+// only show in the table view (or with the stage filter) so the board stays
+// about what's live.
 const COLUMNS: { title: string; stages: Stage[] }[] = [
   { title: "À contacter", stages: ["a_contacter"] },
   { title: "Brouillon prêt", stages: ["brouillon"] },
@@ -63,6 +65,7 @@ const EVENT_ICONS: Partial<Record<EventType, string>> = {
   meeting_scheduled: "◷",
   won: "★",
   lost: "–",
+  opt_out: "⛔",
   note: "•",
   reminder_set: "🔔",
   reminder_done: "✓",
@@ -186,6 +189,7 @@ export default function ProspectionPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [events, setEvents] = useState<ProspectEvent[]>([]);
+  const [doNotContact, setDoNotContact] = useState<DoNotContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [view, setView] = useState<View>("stats");
@@ -230,6 +234,7 @@ export default function ProspectionPage() {
       const json = await res.json();
       setProspects(json.prospects);
       setEvents(json.events);
+      setDoNotContact(json.doNotContact ?? []);
       setError("");
     } catch (err) {
       setError((err as Error).message);
@@ -351,6 +356,7 @@ export default function ProspectionPage() {
       if (!res.ok) throw new Error(json.error || "Échec de l'enregistrement.");
       setProspects((prev) => prev.map((p) => (p.id === prospectId ? json.prospect : p)));
       setEvents((prev) => [...prev, json.event]);
+      if (json.prospect?.stage === "ne_plus_contacter") load();
       if (okMsg) setNotice(okMsg);
     } catch (err) {
       setNotice((err as Error).message);
@@ -382,6 +388,7 @@ export default function ProspectionPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Échec de l'enregistrement.");
       if (creating && json.skipped?.length) setNotice(`« ${json.skipped[0]} » existe déjà.`);
+      if (creating && json.blocked?.length) setNotice(`« ${json.blocked[0]} » est sur la liste « Ne plus contacter » : fiche non créée.`);
       await load();
       if (creating && json.created?.[0]) setSelectedId(json.created[0].id);
       setCreating(false);
@@ -412,7 +419,10 @@ export default function ProspectionPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Import impossible.");
-      setNotice(`${json.created.length} prospect(s) importé(s), ${json.skipped.length} doublon(s) ignoré(s).`);
+      setNotice(
+        `${json.created.length} prospect(s) importé(s), ${json.skipped.length} doublon(s) ignoré(s)` +
+          (json.blocked?.length ? `, ${json.blocked.length} refusé(s) (ne plus contacter).` : ".")
+      );
       await load();
     } catch (err) {
       setNotice((err as Error).message);
@@ -455,6 +465,17 @@ export default function ProspectionPage() {
     setNote("");
   }
 
+  function askOptOut() {
+    if (!selected) return;
+    const reason = window.prompt(
+      `« ${selected.name} » ne sera plus jamais contacté : son domaine passe sur la liste « Ne plus contacter » et tout brouillon, envoi ou relance sera refusé. Motif ?`,
+      note || "A demandé à être retiré de notre base"
+    );
+    if (reason === null) return;
+    postEvent(selected.id, { type: "opt_out", channel: "email", note: reason.trim() || undefined }, "Prospect classé « Ne plus contacter ».");
+    setNote("");
+  }
+
   const sorted = useMemo(() => {
     const arr = [...filtered];
     arr.sort((a, b) => {
@@ -488,6 +509,7 @@ export default function ProspectionPage() {
       <div className="px-badges">
         {p.strategy && <span className={`px-pill strat strat-${p.strategy}`}>{STRATEGY_LABELS[p.strategy]}</span>}
         {p.tier && <span className="px-pill">Palier {p.tier}</span>}
+        {p.stage === "ne_plus_contacter" && <span className="px-pill danger">⛔ Ne plus contacter</span>}
         {p.stage === "brouillon" && (sendAuthorized(evs) ? <span className="px-pill good">Envoi autorisé</span> : <span className="px-pill blue">À valider</span>)}
         {isFollowUpDue(p) && <span className="px-pill amber">Relance due</span>}
         {p.archived && <span className="px-pill">Archivé</span>}
@@ -789,6 +811,19 @@ export default function ProspectionPage() {
               })}
             </div>
             <div className="px-stat-block">
+              <h3>Ne plus contacter ({doNotContact.length})</h3>
+              {doNotContact.length === 0 && <p className="px-legend">Aucune demande de retrait.</p>}
+              <ul className="px-dnc">
+                {[...doNotContact].sort((a, b) => b.at.localeCompare(a.at)).map((d) => (
+                  <li key={d.domain}>
+                    <b>{d.domain}</b>
+                    <span>{[d.prospectName, d.reason].filter(Boolean).join(" · ")}</span>
+                    <small>{fmtDate(d.at)}</small>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="px-stat-block">
               <h3>Activité des 14 derniers jours</h3>
               <div className="px-spark">
                 {Array.from({ length: 14 }, (_, i) => {
@@ -858,7 +893,7 @@ export default function ProspectionPage() {
                 <select
                   value={selected.stage}
                   onChange={(e) => postEvent(selected.id, { type: "stage_changed", stage: e.target.value, note: `${STAGE_LABELS[selected.stage]} → ${STAGE_LABELS[e.target.value as Stage]}` })}
-                  disabled={busy}
+                  disabled={busy || selected.stage === "ne_plus_contacter"}
                   aria-label="Étape"
                 >
                   {STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
@@ -943,7 +978,13 @@ export default function ProspectionPage() {
                 ))}
               </dl>
 
-              {draft && (
+              {selected.stage === "ne_plus_contacter" && (
+                <p className="px-optout">
+                  ⛔ A demandé à ne plus être contacté : aucun brouillon, envoi ni relance n&apos;est accepté, sur ce prospect comme sur son domaine.
+                </p>
+              )}
+
+              {draft && selected.stage !== "ne_plus_contacter" && (
                 <div className="px-draft">
                   <div className="px-draft-head">✎ Brouillon{draft.channel ? ` (${draft.channel})` : ""} · {fmtDate(draft.at, true)} · {draft.actor}</div>
                   {draft.subject && <b>{draft.subject}</b>}
@@ -969,11 +1010,16 @@ export default function ProspectionPage() {
               )}
 
               <div className="px-actions px-quick">
-                <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: "follow_up_sent", channel: "email", note: note || undefined }, "Relance enregistrée.")}>↻ Relance envoyée</button>
-                <button type="button" className="tab" disabled={busy} onClick={askReply}>↩ Réponse reçue</button>
-                <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: "meeting_scheduled", note: note || undefined }, "RDV enregistré.")}>◷ RDV</button>
-                <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: "won", note: note || undefined })}>★ Gagné</button>
-                <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: "lost", note: note || undefined })}>– Perdu</button>
+                {selected.stage !== "ne_plus_contacter" && (
+                  <>
+                    <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: "follow_up_sent", channel: "email", note: note || undefined }, "Relance enregistrée.")}>↻ Relance envoyée</button>
+                    <button type="button" className="tab" disabled={busy} onClick={askReply}>↩ Réponse reçue</button>
+                    <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: "meeting_scheduled", note: note || undefined }, "RDV enregistré.")}>◷ RDV</button>
+                    <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: "won", note: note || undefined })}>★ Gagné</button>
+                    <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: "lost", note: note || undefined })}>– Perdu</button>
+                    <button type="button" className="tab danger" disabled={busy} onClick={askOptOut}>⛔ Ne plus contacter</button>
+                  </>
+                )}
                 <button type="button" className="tab" onClick={() => { setForm(toForm(selected)); setEditing(true); }}>✏️ Modifier</button>
                 <button type="button" className="tab" disabled={busy} onClick={() => postEvent(selected.id, { type: selected.archived ? "restored" : "archived" })}>
                   {selected.archived ? "Restaurer" : "Archiver"}

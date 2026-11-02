@@ -62,6 +62,27 @@ technos », « Sans techno »). Sans valeur, elle est déduite des tags
 antérieures sans migration. Colonnes CSV `platform`, `plateforme`, `cms` ou
 `technologie`.
 
+## Ne plus contacter
+
+Classement des prospects qui ont demandé à être retirés de notre base.
+
+- Événement `opt_out` (bouton « ⛔ Ne plus contacter » de la fiche) : la fiche
+  passe à l'étape `ne_plus_contacter`, la relance prévue est annulée et ses
+  domaines (site et emails) rejoignent la liste `data/do-not-contact.json`.
+  Une adresse webmail (gmail.com, yahoo.fr, free.fr…) est bloquée adresse par
+  adresse, pas le domaine entier.
+- Une fois désinscrite, la fiche refuse `draft_created`, `draft_updated`,
+  `send_authorized`, `email_sent`, `follow_up_sent` et `meeting_scheduled`
+  (erreur 400), et son étape ne peut plus être changée. Le blocage vaut aussi
+  pour toute autre fiche du même domaine.
+- Un nouveau prospect sur un domaine de la liste n'est pas créé : il revient
+  dans `blocked` de la réponse de `POST /api/prospection/prospects`.
+- La liste s'affiche dans la vue Statistiques et sort avec
+  `GET /api/prospection/prospects` (`doNotContact`).
+
+**Avant tout nouvel envoi (lot Claude compris), vérifier la liste :**
+`GET /api/prospection/do-not-contact`.
+
 ## Authentification
 
 1. **Session** (interface web) : cookie `board_session`, rôle admin ou manager.
@@ -86,6 +107,8 @@ openssl rand -hex 24
 | GET | `/api/prospection/prospects/{id}` | `{ prospect, events }` |
 | PATCH | `/api/prospection/prospects/{id}` | Modifier des champs (trace `prospect_updated`) |
 | POST | `/api/prospection/prospects/{id}/events` | Ajouter un événement (l'étape suit automatiquement) |
+| GET | `/api/prospection/do-not-contact` | Liste « Ne plus contacter » `{ doNotContact }` |
+| POST | `/api/prospection/do-not-contact` | Ajouter `{ domain, reason }` ou `{ domains: [...], reason }` sans fiche prospect |
 | GET | `/api/prospection/export?format=csv&dataset=prospects` | Export CSV prospects |
 | GET | `/api/prospection/export?format=csv&dataset=events` | Export CSV historique |
 | GET | `/api/prospection/export?format=json` | Export JSON complet |
@@ -96,7 +119,7 @@ openssl rand -hex 24
 `type` parmi : `prospect_created`, `prospect_updated`, `imported`,
 `draft_created`, `draft_updated`, `draft_deleted`, `send_authorized`,
 `email_sent`, `follow_up_sent`, `reply_received`, `message_deleted`,
-`meeting_scheduled`, `won`, `lost`, `stage_changed` (avec `stage`),
+`meeting_scheduled`, `won`, `lost`, `opt_out`, `stage_changed` (avec `stage`),
 `archived`, `restored`, `note`.
 
 Champs optionnels : `channel` (email, linkedin, telephone, whatsapp,
@@ -106,6 +129,7 @@ formulaire, autre), `subject`, `body`, `gmailDraftId`, `gmailMessageId`,
 Effets sur l'étape : `draft_created` → Brouillon prêt · `email_sent` →
 Envoyé (relance prévue à J+4) · `follow_up_sent` → Relancé (J+6) ·
 `reply_received` → Répondu · `meeting_scheduled` → RDV · `won` / `lost` ·
+`opt_out` → Ne plus contacter (définitif) ·
 `draft_deleted` → retour à l'étape précédente.
 
 ### Exemple : enregistrer un brouillon Gmail

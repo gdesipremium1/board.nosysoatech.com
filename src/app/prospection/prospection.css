@@ -300,6 +300,47 @@
   border-color: transparent;
   color: var(--good);
 }
+.px-pill.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+/* Prospect désinscrit (étape « Ne plus contacter ») */
+.px-optout {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 13px;
+}
+.px-dnc {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.px-dnc li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.px-dnc b {
+  font-weight: 500;
+  color: var(--danger);
+}
+.px-dnc span {
+  grid-column: 1;
+  color: var(--ink-soft);
+}
+.px-dnc small {
+  grid-row: 1;
+  grid-column: 2;
+  color: var(--ink-faint);
+}
 .px-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);

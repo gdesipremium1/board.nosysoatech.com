@@ -1,7 +1,7 @@
 // Types and labels shared by the server store (prospection.ts) and the
 // client page -- no Node imports here so it can ship to the browser.
 
-export const STAGES = ["a_contacter", "brouillon", "envoye", "relance", "repondu", "rdv", "gagne", "perdu"] as const;
+export const STAGES = ["a_contacter", "brouillon", "envoye", "relance", "repondu", "rdv", "gagne", "perdu", "ne_plus_contacter"] as const;
 export type Stage = (typeof STAGES)[number];
 
 export const STAGE_LABELS: Record<Stage, string> = {
@@ -13,7 +13,50 @@ export const STAGE_LABELS: Record<Stage, string> = {
   rdv: "RDV",
   gagne: "Gagné",
   perdu: "Perdu",
+  ne_plus_contacter: "Ne plus contacter",
 };
+
+// "Do not contact" list: domains whose owner asked to be removed. Any
+// outreach event (draft, send, follow-up) towards one of them is refused by
+// the server, and new prospects on such a domain are not created.
+export type DoNotContact = {
+  domain: string;
+  reason?: string;
+  prospectId?: string;
+  prospectName?: string;
+  at: string;
+  actor: string;
+};
+
+// Events that mean reaching out again: forbidden once a prospect opted out.
+export const OUTREACH_EVENTS = ["draft_created", "draft_updated", "send_authorized", "email_sent", "follow_up_sent", "meeting_scheduled"] as const;
+
+// "contact@www.Example.fr" / "https://www.example.fr/x" -> "example.fr".
+export function normalizeDomain(v: string): string | undefined {
+  const s = v.trim().toLowerCase();
+  const host = s.includes("@") ? s.split("@").pop()! : s.replace(/^[a-z]+:\/\//, "").split(/[/?#:]/)[0];
+  const d = host.replace(/^www\./, "").replace(/\.$/, "");
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d) ? d : undefined;
+}
+
+// Every domain a prospect can be reached on (site and email addresses).
+// Webmail domains are left out: blocking gmail.com would block everyone.
+const WEBMAIL = new Set(["gmail.com", "yahoo.fr", "yahoo.com", "hotmail.com", "hotmail.fr", "outlook.com", "outlook.fr", "free.fr", "orange.fr", "laposte.net", "icloud.com", "live.fr", "sfr.fr", "wanadoo.fr", "skynet.be", "proton.me", "protonmail.com", "passmail.com"]);
+
+export function prospectDomains(p: { website?: string; emails?: string[]; decisionEmail?: string }): string[] {
+  const raw = [p.website, ...(p.emails ?? []), p.decisionEmail].filter(Boolean) as string[];
+  return [...new Set(raw.map(normalizeDomain).filter((d): d is string => !!d && !WEBMAIL.has(d)))];
+}
+
+// Opted-out addresses on a webmail domain are blocked by full address.
+export function prospectAddresses(p: { emails?: string[]; decisionEmail?: string }): string[] {
+  return [...new Set([...(p.emails ?? []), p.decisionEmail].filter(Boolean).map((e) => e!.trim().toLowerCase()))];
+}
+
+export function isBlocked(p: { website?: string; emails?: string[]; decisionEmail?: string }, list: DoNotContact[]): DoNotContact | undefined {
+  const keys = new Set([...prospectDomains(p), ...prospectAddresses(p)]);
+  return list.find((d) => keys.has(d.domain));
+}
 
 // Prospecting strategy, i.e. why we target this prospect. "esn" is the
 // original campaign (IT services firms buying subcontracting / régie);
@@ -180,6 +223,7 @@ export const EVENT_TYPES = [
   "meeting_scheduled",
   "won",
   "lost",
+  "opt_out",
   "stage_changed",
   "archived",
   "restored",
@@ -204,6 +248,7 @@ export const EVENT_LABELS: Record<EventType, string> = {
   meeting_scheduled: "RDV planifié",
   won: "Gagné",
   lost: "Perdu",
+  opt_out: "Ne plus contacter",
   stage_changed: "Étape changée",
   archived: "Archivé",
   restored: "Restauré",

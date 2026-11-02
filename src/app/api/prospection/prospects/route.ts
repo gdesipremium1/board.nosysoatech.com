@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createProspects, listEvents, listProspects, parseCsv, rowsToProspectInputs } from "@/lib/prospection";
+import { createProspects, listDoNotContact, listEvents, listProspects, parseCsv, rowsToProspectInputs } from "@/lib/prospection";
 import { prospectionActor } from "@/lib/prospectionAuth";
 
 const denied = () => NextResponse.json({ error: "Accès refusé." }, { status: 403 });
@@ -8,12 +8,13 @@ const denied = () => NextResponse.json({ error: "Accès refusé." }, { status: 4
 // (a few thousand prospects at most) stays small for JSON files.
 export async function GET(request: NextRequest) {
   if (!(await prospectionActor(request))) return denied();
-  const [prospects, events] = await Promise.all([listProspects(), listEvents()]);
-  return NextResponse.json({ prospects, events });
+  const [prospects, events, doNotContact] = await Promise.all([listProspects(), listEvents(), listDoNotContact()]);
+  return NextResponse.json({ prospects, events, doNotContact });
 }
 
 // Accepts { prospect }, { prospects: [...] } or { csv, source } (import).
-// Duplicates (same SIREN, else same name) are skipped, never overwritten.
+// Duplicates (same SIREN, else same name) are skipped, never overwritten;
+// prospects on a "ne plus contacter" domain are refused (`blocked`).
 export async function POST(request: NextRequest) {
   const actor = await prospectionActor(request);
   if (!actor) return denied();

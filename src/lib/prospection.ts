@@ -12,8 +12,14 @@ import { readJson, writeJson } from "./jsonFile";
 import {
   CHANNELS,
   EVENT_TYPES,
+  OUTREACH_EVENTS,
   STAGES,
+  isBlocked,
+  normalizeDomain,
+  prospectAddresses,
+  prospectDomains,
   type Channel,
+  type DoNotContact,
   type EventType,
   type Prospect,
   type ProspectEvent,
@@ -30,11 +36,45 @@ export * from "./prospectionShared";
 const DATA_DIR = path.join(process.cwd(), "data");
 const PROSPECTS_FILE = path.join(DATA_DIR, "prospects.json");
 const EVENTS_FILE = path.join(DATA_DIR, "prospect-events.json");
+const DO_NOT_CONTACT_FILE = path.join(DATA_DIR, "do-not-contact.json");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function listProspects(): Promise<Prospect[]> {
   return readJson<Prospect[]>(PROSPECTS_FILE, []);
+}
+
+export async function listDoNotContact(): Promise<DoNotContact[]> {
+  return readJson<DoNotContact[]>(DO_NOT_CONTACT_FILE, []);
+}
+
+// Adds domains (or full addresses, for webmail) to the list; already listed
+// entries are kept as they are, so the first opt-out date stays the reference.
+export async function addDoNotContact(
+  entries: { domain: string; reason?: string; prospectId?: string; prospectName?: string }[],
+  actor: string
+): Promise<DoNotContact[]> {
+  const list = await listDoNotContact();
+  const known = new Set(list.map((d) => d.domain));
+  const added: DoNotContact[] = [];
+  for (const e of entries) {
+    const raw = e.domain.trim().toLowerCase();
+    const domain = raw.includes("@") && prospectDomains({ emails: [raw] }).length === 0 ? raw : normalizeDomain(raw);
+    if (!domain || known.has(domain)) continue;
+    const entry: DoNotContact = {
+      domain,
+      reason: str(e.reason, 500),
+      prospectId: e.prospectId,
+      prospectName: str(e.prospectName, 200),
+      at: new Date().toISOString(),
+      actor,
+    };
+    list.push(entry);
+    added.push(entry);
+    known.add(domain);
+  }
+  if (added.length) await writeJson(DO_NOT_CONTACT_FILE, list);
+  return added;
 }
 
 export async function listEvents(prospectId?: string): Promise<ProspectEvent[]> {
@@ -184,6 +224,11 @@ function applyEventToProspect(p: Prospect, e: ProspectEvent, history: ProspectEv
       p.nextFollowUpAt = undefined;
       p.nextAction = undefined;
       break;
+    case "opt_out":
+      p.stage = "ne_plus_contacter";
+      p.nextFollowUpAt = undefined;
+      p.nextAction = "Aucune prise de contact (désinscription)";
+      break;
     case "stage_changed":
       if (e.stage) p.stage = e.stage;
       break;
@@ -314,11 +359,13 @@ export async function createProspects(
   inputs: Record<string, unknown>[],
   actor: string,
   opts: { imported?: boolean; source?: string } = {}
-): Promise<{ created: Prospect[]; skipped: string[] }> {
+): Promise<{ created: Prospect[]; skipped: string[]; blocked: string[] }> {
   const prospects = await listProspects();
   const events = await listEvents();
+  const doNotContact = await listDoNotContact();
   const created: Prospect[] = [];
   const skipped: string[] = [];
+  const blocked: string[] = [];
   const now = new Date().toISOString();
 
   for (const input of inputs.slice(0, 5000)) {
@@ -342,6 +389,10 @@ export async function createProspects(
       updatedAt: now,
     };
     applyFields(p, input);
+    if (isBlocked(p, doNotContact)) {
+      blocked.push(name);
+      continue;
+    }
     if (!p.source && opts.source) p.source = opts.source;
     prospects.push(p);
     created.push(p);
@@ -353,7 +404,7 @@ export async function createProspects(
   }
   await writeJson(PROSPECTS_FILE, prospects);
   await writeJson(EVENTS_FILE, events);
-  return { created, skipped };
+  return { created, skipped, blocked };
 }
 
 export async function updateProspect(id: string, input: Record<string, unknown>, actor: string): Promise<Prospect> {
@@ -404,12 +455,28 @@ export async function addEvent(
     throw new Error("Rappel introuvable.");
   }
 
+  // Opt-out is final: no new outreach towards the prospect or its domain,
+  // and the card cannot be moved back into the pipeline.
+  const doNotContact = await listDoNotContact();
+  const optedOut = p.stage === "ne_plus_contacter" || isBlocked(p, doNotContact);
+  if (optedOut && (OUTREACH_EVENTS as readonly string[]).includes(type)) {
+    throw new Error("Ce prospect a demandé à ne plus être contacté : aucun brouillon, envoi ni relance possible.");
+  }
+  if (p.stage === "ne_plus_contacter" && type === "stage_changed" && event.stage !== "ne_plus_contacter") {
+    throw new Error("Prospect désinscrit : son étape « Ne plus contacter » ne peut plus être changée.");
+  }
+
   const events = await listEvents();
   applyEventToProspect(p, event, events.filter((e) => e.prospectId === prospectId));
   p.updatedAt = event.at;
   events.push(event);
   await writeJson(EVENTS_FILE, events);
   await writeJson(PROSPECTS_FILE, prospects);
+  if (type === "opt_out" || (type === "stage_changed" && event.stage === "ne_plus_contacter")) {
+    // Webmail addresses are blocked one by one, company domains as a whole.
+    const keys = [...prospectDomains(p), ...prospectAddresses(p).filter((a) => !prospectDomains({ emails: [a] }).length)];
+    await addDoNotContact(keys.map((domain) => ({ domain, reason: event.note, prospectId: p.id, prospectName: p.name })), actor);
+  }
   return { event, prospect: p };
 }
 
