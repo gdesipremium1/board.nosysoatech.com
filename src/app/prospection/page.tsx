@@ -147,6 +147,37 @@ function countryKeyLabel(key: string): string {
   return key === "CA-en" ? countryLabel("CA", "en") : countryLabel(key);
 }
 
+// Report of POST /api/prospection/import (see importFull).
+type ImportReport = {
+  prospects: { added: number; merged: number; stageUpdated: number; fieldsFilled: number };
+  events: { added: number; alreadyPresent: number; ignored: number };
+  doNotContact: { added: number };
+  added: string[];
+  mergedByName: string[];
+  stageChanges: { name: string; from: Stage; to: Stage }[];
+  backup?: string;
+};
+
+function importChanges(r: ImportReport): number {
+  return r.prospects.added + r.prospects.fieldsFilled + r.prospects.stageUpdated + r.mergedByName.length + r.events.added + r.doNotContact.added;
+}
+
+function importSummary(r: ImportReport, preview: boolean): string {
+  const lines = [
+    preview ? "Aperçu de l'import (rien n'est encore écrit) :" : "Import terminé :",
+    `• ${r.prospects.added} prospect(s) ajouté(s)${r.added.length ? ` (${r.added.slice(0, 5).join(", ")}${r.added.length > 5 ? "…" : ""})` : ""}`,
+    `• ${r.prospects.merged} prospect(s) déjà présents, fusionnés sans doublon${r.mergedByName.length ? `, dont ${r.mergedByName.length} reconnu(s) par leur nom` : ""}`,
+    `• ${r.prospects.fieldsFilled} champ(s) vide(s) complété(s), rien d'existant n'est écrasé`,
+    `• ${r.prospects.stageUpdated} étape(s) mise(s) à jour${r.stageChanges.length ? ` (${r.stageChanges.slice(0, 3).map((c) => `${c.name} : ${STAGE_LABELS[c.from]} → ${STAGE_LABELS[c.to]}`).join(" ; ")}${r.stageChanges.length > 3 ? "…" : ""})` : ""}`,
+    `• ${r.events.added} événement(s) ajouté(s), ${r.events.alreadyPresent} déjà présent(s) ignoré(s)`,
+    `• ${r.doNotContact.added} domaine(s) ajouté(s) à « Ne plus contacter »`,
+    "Aucune donnée n'est supprimée.",
+  ];
+  if (preview) lines.push("", "Une sauvegarde est faite avant l'écriture. Lancer l'import ?");
+  else if (r.backup) lines.push(`Sauvegarde d'avant import : ${r.backup}`);
+  return lines.join("\n");
+}
+
 const EMPTY_FORM = {
   name: "", strategy: "", country: "", language: "", platform: "", city: "", headcount: "", tier: "", score: "", website: "", emails: "", phones: "",
   linkedin: "", decisionMaker: "", decisionRole: "", decisionEmail: "", source: "", tags: "", nextAction: "",
@@ -409,19 +440,29 @@ export default function ProspectionPage() {
         const parsed = JSON.parse(text);
         // A full export (« Tout (JSON) » of another board) carries the
         // history: restore it with ids, dates and authors, merging what exists.
+        // Preview first (nothing written), confirm, then import for real.
         if (!Array.isArray(parsed) && Array.isArray(parsed.events)) {
-          const res = await fetch("/api/prospection/import", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: text,
-          });
-          const json = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(json.error || "Import impossible.");
-          setNotice(
-            `Sauvegarde importée : ${json.prospects} prospect(s) ajouté(s), ${json.merged} fusionné(s), ` +
-              `${json.events} événement(s) ajouté(s), ${json.skippedEvents} déjà présent(s), ` +
-              `${json.doNotContact} domaine(s) « Ne plus contacter ».`
-          );
+          const run = async (dryRun: boolean): Promise<ImportReport> => {
+            const res = await fetch(`/api/prospection/import${dryRun ? "?dryRun=1" : ""}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: text,
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || "Import impossible.");
+            return json;
+          };
+          const preview = await run(true);
+          if (!importChanges(preview)) {
+            setNotice("Rien à importer : tout le contenu de ce fichier est déjà sur ce board.");
+            return;
+          }
+          if (!window.confirm(importSummary(preview, true))) {
+            setNotice("Import annulé : rien n'a été modifié.");
+            return;
+          }
+          const report = await run(false);
+          setNotice(importSummary(report, false));
           await load();
           return;
         }

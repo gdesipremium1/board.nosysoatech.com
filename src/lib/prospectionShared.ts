@@ -295,6 +295,9 @@ export type Prospect = {
   // Dated reminders: a reminder only "rings" (counts as a notification) once
   // its date is reached and until it is marked done.
   reminders?: Reminder[];
+  // Ids this prospect had on another board, recorded when an import merged
+  // it by name: the next import recognises it even if it was renamed.
+  aliases?: string[];
   createdAt: string;
   updatedAt: string;
 };

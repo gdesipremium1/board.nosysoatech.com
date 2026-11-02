@@ -83,6 +83,42 @@ Classement des prospects qui ont demandé à être retirés de notre base.
 **Avant tout nouvel envoi (lot Claude compris), vérifier la liste :**
 `GET /api/prospection/do-not-contact`.
 
+## Reporter le board local sur le board en ligne
+
+L'import complet est conçu pour qu'aucune donnée ne se casse, ne disparaisse
+ni ne se double :
+
+- **Rien n'est supprimé.** Ce qui n'existe qu'en ligne reste tel quel.
+- **Pas de doublon de fiche.** Un prospect déjà en ligne est reconnu par son
+  id, puis par un id qu'il avait sur l'autre board (`aliases`, mémorisé lors
+  d'une fusion), puis par son nom. Ses événements sont rattachés à la fiche
+  existante.
+- **Pas de doublon d'événement.** Un événement déjà présent (mêmes ids Gmail,
+  sinon même sujet et note) est ignoré.
+- **Rien n'est écrasé.** Seuls les champs vides sont complétés ; emails,
+  téléphones et tags sont réunis. L'étape n'est reprise que si la fiche
+  source est plus récente.
+- **Aperçu avant écriture** (`?dryRun=1`), puis **sauvegarde automatique**
+  des fichiers dans `data/backups/` (30 dernières conservées) avant l'import
+  réel, tracé dans `data/import-log.json`. Pour revenir en arrière : arrêter
+  le board, recopier les trois fichiers de la sauvegarde dans `data/`.
+- **Pas d'écriture concurrente.** Toutes les écritures de la prospection
+  passent par une même file : un clic pendant un import ne peut pas en
+  effacer une partie.
+- Relancer le même import ne change rien.
+
+Deux façons de faire :
+
+1. **Interface** (admin) : sur le board local, « ⇣ Exporter » → « Tout
+   (JSON) » ; sur le board en ligne, « ⇡ Importer » ce fichier. Un aperçu
+   s'affiche, l'import n'a lieu qu'après confirmation.
+2. **Script** (clés d'API des deux boards) :
+
+```bash
+LOCAL_KEY=... ONLINE_KEY=... scripts/prospection-sync.sh           # aperçu seul
+LOCAL_KEY=... ONLINE_KEY=... scripts/prospection-sync.sh --apply   # import réel
+```
+
 ## Authentification
 
 1. **Session** (interface web) : cookie `board_session`, rôle admin ou manager.
