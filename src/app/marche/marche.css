@@ -367,3 +367,130 @@
     margin-left: 0;
   }
 }
+/* Navigation entre les pages Marché */
+.mk-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+.mk-tabs a {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+.mk-tabs a.active {
+  color: var(--ink);
+  border-bottom-color: var(--blue);
+}
+/* Stacks rentables (stack/page.tsx) : une couleur par verdict */
+.v-sweet {
+  --v: var(--good);
+}
+.v-ok {
+  --v: var(--blue);
+}
+.v-saturated {
+  --v: var(--ink-soft);
+}
+.v-absent {
+  --v: var(--ink-faint);
+}
+.v-avoid {
+  --v: var(--danger);
+}
+.v-platform {
+  --v: var(--amber);
+}
+.mk-insights {
+  margin-bottom: 14px;
+}
+.mk-subhead {
+  margin-top: 14px !important;
+}
+.mk-scatter {
+  width: 100%;
+  min-width: 560px;
+  height: auto;
+  display: block;
+}
+.mk-sweet-zone {
+  fill: var(--good-soft);
+}
+.mk-zone-label {
+  font-size: 11px;
+  fill: var(--good);
+}
+.mk-grid-line {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.mk-iso {
+  stroke: var(--good);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.mk-axis {
+  font-size: 11px;
+  fill: var(--ink-faint);
+}
+.mk-dot circle {
+  fill: var(--v);
+  stroke: var(--card);
+  stroke-width: 1.5;
+}
+.mk-dot text {
+  font-size: 11px;
+  fill: var(--ink-soft);
+}
+.mk-swatch {
+  background: var(--v);
+}
+.mk-sortable {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mk-sortable.active {
+  color: var(--ink) !important;
+  text-decoration: underline;
+}
+.mk-stack td {
+  white-space: nowrap;
+}
+.mk-ratio-cell {
+  min-width: 170px;
+}
+.mk-ratio {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+}
+.mk-ratio > div {
+  height: 10px;
+  background: var(--paper);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.mk-ratio i {
+  display: block;
+  height: 100%;
+  background: var(--v);
+}
+.mk-ratio b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mk-verdict {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--v);
+  color: var(--v);
+  font-size: 11.5px;
+}

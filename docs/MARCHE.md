@@ -96,12 +96,41 @@ curl -X POST "$BOARD_URL/api/market" \
   -H "Content-Type: application/json" --data-binary @market.json
 ```
 
+## Stacks rentables (`/marche/stack`)
+
+Deuxième page du module : quelles technos offrent le plus de **missions
+réelles** pour le moins de **concurrence**.
+
+| Mesure | Source | Remarque |
+|---|---|---|
+| Demande : missions freelance sur 6 mois, même période un an plus tôt, tarif médian | ITJobsWatch (Royaume-Uni) | Seul relevé public des missions par techno ; indicateur de tendance pour nos marchés |
+| Concurrence : part des développeurs professionnels qui pratiquent la techno | Stack Overflow Developer Survey 2025 (monde) | Plateformes d'éditeur (Salesforce, ServiceNow, Power BI, Dynamics) et dbt absents : concurrence non mesurée |
+
+Ratio = missions ÷ part des développeurs (en %). Verdicts : ratio ≥ 150 et
+missions en hausse = « forte demande, peu de concurrence » ; ratio ≥ 30 =
+« bon équilibre » ; en dessous = « concurrence forte » ; missions en baisse de
+plus de 20 % sur un an = « en recul ». La page propose un nuage de points
+(échelles logarithmiques), un tableau triable et des filtres par famille et
+par verdict. La liste des technos suivies est dans `TECHS` de
+`scripts/market/stack.py`.
+
+```bash
+cd scripts/market
+docker run --rm -v "$PWD:/w" -w /w -v "<dossier du results.csv>:/so:ro" \
+  -e SO_CSV=/so/results.csv python:3.12-slim python -I stack.py
+curl -X POST "$BOARD_URL/api/market/stack" \
+  -H "Authorization: Bearer $PROSPECTION_API_KEY" \
+  -H "Content-Type: application/json" --data-binary @stack.json
+```
+
 ## API
 
 | Méthode | Chemin | Rôle |
 |---|---|---|
 | GET | `/api/market` | `{ studies }`, de la plus récente à la plus ancienne |
 | POST | `/api/market` | Ajoute (ou remplace par `id`) une étude |
+| GET | `/api/market/stack` | Études « Stacks rentables » `{ studies }` |
+| POST | `/api/market/stack` | Ajoute (ou remplace par `id`) une étude produite par `stack.py` |
 
 Champs d'une étude : `id`, `title`, `collectedAt` (AAAA-MM-JJ), `countries`,
 `skills`, `families`, `trends` (`{ compétence: { pays: indice } }`),

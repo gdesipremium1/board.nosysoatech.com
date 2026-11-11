@@ -84,6 +84,65 @@ export type WorkStudy = {
 
 export type MarketStudyInput = Omit<MarketStudy, "id" | "title"> & { id?: string; title?: string };
 
+// "Stacks rentables": real demand (freelance missions) against competition
+// (share of developers using the technology). Collected by
+// scripts/market/stack.py; the page derives ratio and growth from the raw
+// figures.
+export type StackRow = {
+  tech: string;
+  family: string;
+  missions: number; // missions over the period
+  missionsPrev: number | null; // same period one year earlier
+  rate: number | null; // median day rate
+  ratePrev: number | null;
+  devShare: number | null; // % of professional developers using it; null = not measured
+};
+
+export type StackStudy = {
+  id: string;
+  title: string;
+  collectedAt: string;
+  region: string;
+  period: string;
+  respondents?: number;
+  rows: StackRow[];
+  sources: { id: string; label: string; url: string }[];
+  notes?: string;
+};
+
+const STACK_FILE = path.join(process.cwd(), "data", "stack-studies.json");
+
+export async function listStackStudies(): Promise<StackStudy[]> {
+  const studies = await readJson<StackStudy[]>(STACK_FILE, []);
+  return studies.sort((a, b) => b.collectedAt.localeCompare(a.collectedAt) || b.id.localeCompare(a.id));
+}
+
+function isStackStudy(v: unknown): v is StackStudy {
+  const s = v as StackStudy;
+  return (
+    !!s &&
+    typeof s.collectedAt === "string" &&
+    Array.isArray(s.rows) &&
+    s.rows.every((r) => r && typeof r.tech === "string" && typeof r.missions === "number") &&
+    Array.isArray(s.sources)
+  );
+}
+
+// Adds a study, or replaces the one with the same id.
+export async function saveStackStudy(input: unknown): Promise<StackStudy | null> {
+  if (!isStackStudy(input)) return null;
+  const study: StackStudy = {
+    ...input,
+    id: (input.id || `${input.collectedAt}-stack`).slice(0, 40),
+    title: (input.title || `Stacks rentables du ${input.collectedAt}`).slice(0, 120),
+    region: input.region || "Royaume-Uni",
+    period: input.period || "",
+  };
+  const studies = await readJson<StackStudy[]>(STACK_FILE, []);
+  await writeJson(STACK_FILE, [...studies.filter((s) => s.id !== study.id), study]);
+  return study;
+}
+
 const FILE = path.join(process.cwd(), "data", "market-studies.json");
 
 export async function listStudies(): Promise<MarketStudy[]> {

@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import AppMenu from "@/components/AppMenu";
 import type { MarketStudy } from "@/lib/market";
 import { countryLabel, type Prospect, type ProspectEvent } from "@/lib/prospectionShared";
+import MarketTabs from "./MarketTabs";
 import MultiSelect, { pick, type Option } from "./MultiSelect";
 import WorkConditions from "./WorkConditions";
 import "./marche.css";
@@ -273,6 +274,7 @@ export default function MarchePage() {
       </header>
 
       <main className="mk-body">
+        <MarketTabs current="etudes" />
         <div className="mk-head">
           <h1>Études de marché</h1>
           {studies.length > 0 && (
