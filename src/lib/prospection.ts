@@ -130,6 +130,9 @@ const EDITABLE_FIELDS = [
 // Whitelist + normalisation of anything coming from the UI, the import or
 // the API key -- the only way fields reach the stored record.
 function applyFields(target: Prospect, input: Record<string, unknown>): void {
+  // « email » (singulier) est accepté comme « emails » : il était ignoré en
+  // silence, ce qui laissait des fiches sans adresse et des domaines non bloqués.
+  if (!("emails" in input) && "email" in input) input = { ...input, emails: input.email };
   for (const key of EDITABLE_FIELDS) {
     if (!(key in input)) continue;
     const v = input[key];
